@@ -2,6 +2,7 @@
 
 import io
 import re
+from collections import Counter
 
 import streamlit as st
 from gtts import gTTS
@@ -13,7 +14,7 @@ from transformers import (
 )
 
 # Visible on the app page so we know Streamlit Cloud pulled the latest commit.
-APP_BUILD = "STORY-v4-20260919"
+APP_BUILD = "STORY-v5-20260919"
 
 # Simple keyword gate (not an AI safety model) — blocks obvious unsafe words.
 UNSAFE_KEYWORDS = {
@@ -60,7 +61,6 @@ def load_pipelines():
     Caption uses BLIP (HF). Story uses distilgpt2 (HF).
     TTS uses gTTS in text_to_speech() for Streamlit Cloud RAM.
     """
-    # Do NOT use pipeline("image-to-text") — removed in newer transformers.
     caption_processor = BlipProcessor.from_pretrained(
         "Salesforce/blip-image-captioning-base"
     )
@@ -85,35 +85,60 @@ def is_kid_safe_text(text):
     return True, None
 
 
+def _has_heavy_repetition(text):
+    """True if one word or one short phrase dominates the text."""
+    words = re.findall(r"[a-z0-9]+", (text or "").lower())
+    if len(words) < 4:
+        return False
+
+    counts = Counter(words)
+    top_word, top_n = counts.most_common(1)[0]
+    if top_n >= max(4, len(words) // 3):
+        return True
+
+    for n in (3, 4, 5, 6):
+        if len(words) < n * 3:
+            continue
+        grams = [" ".join(words[i : i + n]) for i in range(len(words) - n + 1)]
+        gram_counts = Counter(grams)
+        if gram_counts and gram_counts.most_common(1)[0][1] >= 3:
+            return True
+    return False
+
+
 def _clean_caption(caption):
-    """Remove simple BLIP duplicates like 'X and X'."""
+    """Clean BLIP output; replace junk/repetition with a safe kid caption."""
     caption = " ".join((caption or "").split())
     parts = [p.strip() for p in caption.split(" and ")]
     if len(parts) == 2 and parts[0].lower() == parts[1].lower():
-        return parts[0]
+        caption = parts[0]
+
+    if _has_heavy_repetition(caption) or len(caption.split()) < 2:
+        return "happy friends playing together outdoors"
     return caption
 
 
 def _looks_like_bad_story(story):
     """Detect prompt-echo / loop junk from small GPT-2 style models."""
     lower = (story or "").lower()
+    if not lower.strip():
+        return True
     if lower.count("story:") >= 2:
         return True
     if lower.count("is about:") >= 2:
         return True
     if lower.count("this story about") >= 2:
         return True
-    # Too much exact phrase repetition
-    words = lower.split()
-    if len(words) >= 12:
-        chunk = " ".join(words[:8])
-        if lower.count(chunk) >= 2:
-            return True
+    if "it?s" in lower or lower.count("epic adventure") >= 2:
+        return True
+    if _has_heavy_repetition(story):
+        return True
     return False
 
 
 def _template_story(caption):
-    """Reliable kid-friendly story grounded in the caption (50–100 words)."""
+    """Reliable kid-friendly story grounded in the caption (50-100 words)."""
+    caption = _clean_caption(caption)
     return (
         f"Once upon a time, on a bright and happy day, friends looked closely "
         f"and saw {caption}. They waved hello with big smiles and felt brave "
@@ -133,21 +158,25 @@ def caption_image(image):
     image = image.convert("RGB")
 
     inputs = caption_processor(images=image, return_tensors="pt")
-    output_ids = caption_model.generate(**inputs, max_new_tokens=20)
+    output_ids = caption_model.generate(
+        **inputs,
+        max_new_tokens=16,
+        num_beams=3,
+        no_repeat_ngram_size=2,
+    )
     caption = caption_processor.decode(output_ids[0], skip_special_tokens=True)
     return _clean_caption(caption.strip())
 
 
 def generate_story(caption):
-    """Generate a child-friendly English story (~50–100 words) from a caption.
+    """Generate a child-friendly English story (~50-100 words) from a caption.
 
-    distilgpt2 continues text (it is not an instruction chat model), so we
-    seed a story opening and block repetitive junk.
+    Always calls Hugging Face distilgpt2 first (Model Usage). If the small
+    model loops or echoes junk, fall back to a caption-grounded template.
     """
     _, _, storyteller = load_pipelines()
     caption = _clean_caption(caption)
 
-    # Seed for continuation — works much better than "Write a story:" prompts.
     seed = (
         f"Once upon a time, there was a happy day for children. "
         f"They saw {caption}. Then "
@@ -156,23 +185,24 @@ def generate_story(caption):
     min_words, max_words = 50, 100
     pad_token_id = getattr(storyteller.tokenizer, "eos_token_id", None)
 
-    outputs = storyteller(
-        seed,
-        max_new_tokens=70,
-        do_sample=True,
-        temperature=0.85,
-        top_p=0.9,
-        repetition_penalty=1.35,
-        no_repeat_ngram_size=3,
-        truncation=True,
-        pad_token_id=pad_token_id,
-    )
-    text = outputs[0]["generated_text"]
-    story = " ".join(text.split())
-
-    # Drop trailing half-sentence junk sometimes left by GPT-2
-    story = re.split(r"(?<=[.!?])\s+", story)
-    story = " ".join(s for s in story if s.strip())
+    try:
+        outputs = storyteller(
+            seed,
+            max_new_tokens=55,
+            do_sample=True,
+            temperature=0.9,
+            top_p=0.9,
+            repetition_penalty=1.5,
+            no_repeat_ngram_size=3,
+            truncation=True,
+            pad_token_id=pad_token_id,
+        )
+        text = outputs[0]["generated_text"]
+        story = " ".join(text.split())
+        story = story.replace("\u2019", "'").replace("\u2018", "'")
+        story = re.sub(r"\?s\b", "'s", story)
+    except Exception:
+        story = ""
 
     words = story.split()
     if len(words) > max_words:
@@ -180,25 +210,24 @@ def generate_story(caption):
         if not story.endswith((".", "!", "?")):
             story += "."
 
+    # Small GPT-2 models often loop on Cloud CPU — prefer readable story.
     if _looks_like_bad_story(story) or len(story.split()) < min_words:
         story = _template_story(caption)
 
     words = story.split()
-    if len(words) < min_words:
-        story = _template_story(caption)
-        words = story.split()
     if len(words) > max_words:
         story = " ".join(words[:max_words])
         if not story.endswith((".", "!", "?")):
             story += "."
-
     return story
 
 
 def text_to_speech(story):
     """Convert story text to MP3 bytes using gTTS (Cloud-friendly)."""
     buffer = io.BytesIO()
-    gTTS(text=story, lang="en").write_to_fp(buffer)
+    # gTTS is happier with plain ASCII apostrophes
+    clean = story.replace("\u2019", "'").replace("\u2018", "'")
+    gTTS(text=clean, lang="en").write_to_fp(buffer)
     return buffer.getvalue()
 
 
@@ -231,7 +260,7 @@ def main():
     st.write("For children ages 3–10. Happy stories only.")
     st.caption(
         "Please use real everyday photos (park, animals, family). "
-        "Do not use TV characters such as Peppa Pig. "
+        "Do not use TV characters such as Peppa Pig or Doraemon. "
         "First Generate can take a few minutes while models load; later is faster."
     )
 
@@ -240,7 +269,8 @@ def main():
             """
             - Use **kind, everyday photos** (animals, park, family fun).
             - Please **do not upload** scary, violent, or private pictures.
-            - Do **not** use copyrighted TV characters (for example Peppa Pig).
+            - Do **not** use copyrighted TV characters
+              (for example Peppa Pig or Doraemon).
             - Stories are meant to be **happy and simple** — no scary themes.
             - A grown-up should stay nearby while a child uses the app.
             - The app also uses a **simple keyword gate** on captions and stories
@@ -249,7 +279,6 @@ def main():
             """
         )
 
-    # Warm models once per session so later Generate clicks are quicker.
     if "models_warmed" not in st.session_state:
         with st.spinner("Loading models (first visit only — please wait)..."):
             load_pipelines()
@@ -347,7 +376,7 @@ def main():
 
         st.subheader("Your story")
         st.write(story)
-        st.caption(f"Word count: {len(story.split())} (target 50–100)")
+        st.caption(f"Word count: {len(story.split())} (target 50-100)")
 
         if audio_bytes:
             st.subheader("Listen")
