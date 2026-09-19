@@ -1,12 +1,50 @@
 """ISOM5240 Individual Lab — Storytelling App for children (ages 3–10)."""
 
 import io
+import re
 
 import numpy as np
 import soundfile as sf
 import streamlit as st
 from PIL import Image
 from transformers import pipeline
+
+# Simple keyword gate (not an AI safety model) — blocks obvious unsafe words.
+UNSAFE_KEYWORDS = {
+    "kill",
+    "killed",
+    "killing",
+    "murder",
+    "blood",
+    "bloody",
+    "gun",
+    "guns",
+    "weapon",
+    "weapons",
+    "dead",
+    "death",
+    "die",
+    "died",
+    "dying",
+    "scary",
+    "scare",
+    "scared",
+    "horror",
+    "terror",
+    "violent",
+    "violence",
+    "war",
+    "bomb",
+    "knife",
+    "hurt",
+    "hate",
+    "abuse",
+    "nude",
+    "naked",
+    "sex",
+    "drug",
+    "drugs",
+}
 
 
 @st.cache_resource
@@ -26,6 +64,17 @@ def load_pipelines():
         model="facebook/mms-tts-eng",
     )
     return captioner, storyteller, tts
+
+
+def is_kid_safe_text(text):
+    """Return (True, None) if text looks kid-safe, else (False, matched_word)."""
+    if not text:
+        return True, None
+    tokens = set(re.findall(r"[a-z']+", text.lower()))
+    for word in UNSAFE_KEYWORDS:
+        if word in tokens:
+            return False, word
+    return True, None
 
 
 def caption_image(image):
@@ -148,6 +197,8 @@ def main():
             - Please **do not upload** scary, violent, or private pictures.
             - Stories are meant to be **happy and simple** — no scary themes.
             - A grown-up should stay nearby while a child uses the app.
+            - The app also uses a **simple keyword gate** on captions and stories
+              (not a full AI safety model).
             - First run may take a minute while models load.
             """
         )
@@ -187,10 +238,26 @@ def main():
                     )
                     return
 
+                ok_caption, _ = is_kid_safe_text(caption)
+                if not ok_caption:
+                    st.warning(
+                        "That picture led to words that are not for little kids. "
+                        "Please try a happier photo and press Generate Story again."
+                    )
+                    return
+
                 story = generate_story(caption)
                 if not story or len(story.split()) < 50:
                     st.warning(
                         "The story was too short. Please press Generate Story again."
+                    )
+                    return
+
+                ok_story, _ = is_kid_safe_text(story)
+                if not ok_story:
+                    st.warning(
+                        "I made a story that is not gentle enough for little kids. "
+                        "Please press Generate Story again, or try another picture."
                     )
                     return
 
