@@ -48,22 +48,34 @@ UNSAFE_KEYWORDS = {
 
 
 @st.cache_resource
-def load_pipelines():
-    """Load Hugging Face pipelines once; reuse across Streamlit reruns."""
-    captioner = pipeline(
+def _load_captioner():
+    return pipeline(
         "image-to-text",
         model="Salesforce/blip-image-captioning-base",
     )
-    storyteller = pipeline(
+
+
+@st.cache_resource
+def _load_storyteller():
+    return pipeline(
         "text-generation",
         model="distilgpt2",
     )
+
+
+@st.cache_resource
+def _load_tts():
     # HF TTS (not gTTS / pyttsx3) — small English model for Streamlit Cloud
-    tts = pipeline(
+    return pipeline(
         "text-to-speech",
         model="facebook/mms-tts-eng",
     )
-    return captioner, storyteller, tts
+
+
+@st.cache_resource
+def load_pipelines():
+    """Load Hugging Face pipelines once; reuse across Streamlit reruns."""
+    return _load_captioner(), _load_storyteller(), _load_tts()
 
 
 def is_kid_safe_text(text):
@@ -79,7 +91,7 @@ def is_kid_safe_text(text):
 
 def caption_image(image):
     """Convert image to RGB and return a short English caption via BLIP."""
-    captioner, _, _ = load_pipelines()
+    captioner = _load_captioner()
 
     if not isinstance(image, Image.Image):
         image = Image.open(image)
@@ -95,7 +107,7 @@ def caption_image(image):
 
 def generate_story(caption):
     """Generate a child-friendly English story (~50–100 words) from a caption."""
-    _, storyteller, _ = load_pipelines()
+    storyteller = _load_storyteller()
 
     prompt = (
         "Write a happy short story for children aged 3 to 10. "
@@ -135,7 +147,6 @@ def generate_story(caption):
         if len(words) >= min_words:
             return story
 
-    # Soft pad if the small model still undershoots (keeps ~50–100 words)
     filler = (
         "They played together and laughed under the bright sun. "
         "Everyone felt happy, kind, and safe. "
@@ -154,10 +165,15 @@ def generate_story(caption):
 
 def text_to_speech(story):
     """Convert story text to WAV audio bytes using Hugging Face TTS."""
-    _, _, tts = load_pipelines()
+    tts = _load_tts()
 
-    result = tts(story)
-    audio = np.asarray(result["audio"]).squeeze()
+    # Keep input shorter for Cloud RAM / MMS stability
+    spoken = " ".join(story.split()[:80])
+    result = tts(spoken)
+    audio = result["audio"]
+    if isinstance(audio, (list, tuple)):
+        audio = audio[0]
+    audio = np.asarray(audio, dtype=np.float32).squeeze()
     sampling_rate = int(result["sampling_rate"])
 
     buffer = io.BytesIO()
@@ -189,12 +205,17 @@ def main():
     st.title("Story Time")
     st.markdown("### Upload a picture. I will tell you a short story!")
     st.write("For children ages 3–10. Happy stories only.")
+    st.caption(
+        "Please use real everyday photos (park, animals, family). "
+        "Do not use TV characters such as Peppa Pig."
+    )
 
     with st.expander("Safety tips for grown-ups", expanded=False):
         st.markdown(
             """
             - Use **kind, everyday photos** (animals, park, family fun).
             - Please **do not upload** scary, violent, or private pictures.
+            - Do **not** use copyrighted TV characters (for example Peppa Pig).
             - Stories are meant to be **happy and simple** — no scary themes.
             - A grown-up should stay nearby while a child uses the app.
             - The app also uses a **simple keyword gate** on captions and stories
@@ -225,61 +246,85 @@ def main():
     st.image(image, caption="Your picture", use_container_width=True)
 
     if st.button("Generate Story", type="primary"):
-        try:
-            with st.spinner(
-                "Making your story... This may take a minute the first time."
-            ):
-                load_pipelines()
+        caption = None
+        story = None
+
+        with st.spinner(
+            "Making your story... This may take a minute the first time."
+        ):
+            try:
                 caption = caption_image(image)
-                if not caption:
-                    st.warning(
-                        "I could not describe that picture. "
-                        "Please try a clearer photo and press Generate Story again."
-                    )
-                    return
+            except Exception as err:
+                st.error(
+                    "Caption step failed. "
+                    "Please wait and try again, or use a smaller JPG/PNG. "
+                    f"Details: {type(err).__name__}: {err}"
+                )
+                return
 
-                ok_caption, _ = is_kid_safe_text(caption)
-                if not ok_caption:
-                    st.warning(
-                        "That picture led to words that are not for little kids. "
-                        "Please try a happier photo and press Generate Story again."
-                    )
-                    return
+            if not caption:
+                st.warning(
+                    "I could not describe that picture. "
+                    "Please try a clearer photo and press Generate Story again."
+                )
+                return
 
+            ok_caption, _ = is_kid_safe_text(caption)
+            if not ok_caption:
+                st.warning(
+                    "That picture led to words that are not for little kids. "
+                    "Please try a happier photo and press Generate Story again."
+                )
+                return
+
+            try:
                 story = generate_story(caption)
-                if not story or len(story.split()) < 50:
-                    st.warning(
-                        "The story was too short. Please press Generate Story again."
-                    )
-                    return
+            except Exception as err:
+                st.error(
+                    "Story step failed. Please press Generate Story again. "
+                    f"Details: {type(err).__name__}: {err}"
+                )
+                st.subheader("What I see")
+                st.write(caption)
+                return
 
-                ok_story, _ = is_kid_safe_text(story)
-                if not ok_story:
-                    st.warning(
-                        "I made a story that is not gentle enough for little kids. "
-                        "Please press Generate Story again, or try another picture."
-                    )
-                    return
+            if not story or len(story.split()) < 50:
+                st.warning(
+                    "The story was too short. Please press Generate Story again."
+                )
+                return
 
+            ok_story, _ = is_kid_safe_text(story)
+            if not ok_story:
+                st.warning(
+                    "I made a story that is not gentle enough for little kids. "
+                    "Please press Generate Story again, or try another picture."
+                )
+                return
+
+            audio_bytes = None
+            try:
                 audio_bytes = text_to_speech(story)
+            except Exception as err:
+                st.error(
+                    "Listening step failed (TTS). "
+                    "Your caption and story are still shown below. "
+                    f"Details: {type(err).__name__}: {err}"
+                )
 
-            st.subheader("What I see")
-            st.write(caption)
+        st.subheader("What I see")
+        st.write(caption)
 
-            st.subheader("Your story")
-            st.write(story)
-            st.caption(f"Word count: {len(story.split())} (target 50–100)")
+        st.subheader("Your story")
+        st.write(story)
+        st.caption(f"Word count: {len(story.split())} (target 50–100)")
 
+        if audio_bytes:
             st.subheader("Listen")
             st.audio(audio_bytes, format="audio/wav")
             st.success("Done! You can upload another picture anytime.")
-
-        except Exception:
-            st.error(
-                "Something went wrong while making the story. "
-                "Please try again with a different picture, "
-                "or wait a moment and press Generate Story again."
-            )
+        else:
+            st.info("Story is ready. Audio could not play this time—try Generate again.")
 
 
 if __name__ == "__main__":
