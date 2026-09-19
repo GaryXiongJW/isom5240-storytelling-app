@@ -13,7 +13,7 @@ from transformers import (
 )
 
 # Visible on the app page so we know Streamlit Cloud pulled the latest commit.
-APP_BUILD = "BLIP-v3-20260919"
+APP_BUILD = "STORY-v4-20260919"
 
 # Simple keyword gate (not an AI safety model) — blocks obvious unsafe words.
 UNSAFE_KEYWORDS = {
@@ -85,6 +85,45 @@ def is_kid_safe_text(text):
     return True, None
 
 
+def _clean_caption(caption):
+    """Remove simple BLIP duplicates like 'X and X'."""
+    caption = " ".join((caption or "").split())
+    parts = [p.strip() for p in caption.split(" and ")]
+    if len(parts) == 2 and parts[0].lower() == parts[1].lower():
+        return parts[0]
+    return caption
+
+
+def _looks_like_bad_story(story):
+    """Detect prompt-echo / loop junk from small GPT-2 style models."""
+    lower = (story or "").lower()
+    if lower.count("story:") >= 2:
+        return True
+    if lower.count("is about:") >= 2:
+        return True
+    if lower.count("this story about") >= 2:
+        return True
+    # Too much exact phrase repetition
+    words = lower.split()
+    if len(words) >= 12:
+        chunk = " ".join(words[:8])
+        if lower.count(chunk) >= 2:
+            return True
+    return False
+
+
+def _template_story(caption):
+    """Reliable kid-friendly story grounded in the caption (50–100 words)."""
+    return (
+        f"Once upon a time, on a bright and happy day, friends looked closely "
+        f"and saw {caption}. They waved hello with big smiles and felt brave "
+        f"and kind. Together they played gently, shared a snack, and made a "
+        f"new friend. The sun was warm, the sky was blue, and everyone laughed. "
+        f"When it was time to rest, they said thank you and felt safe. "
+        f"It was a wonderful little adventure to remember."
+    )
+
+
 def caption_image(image):
     """Convert image to RGB and return a short English caption via BLIP."""
     caption_processor, caption_model, _ = load_pipelines()
@@ -94,66 +133,65 @@ def caption_image(image):
     image = image.convert("RGB")
 
     inputs = caption_processor(images=image, return_tensors="pt")
-    output_ids = caption_model.generate(**inputs, max_new_tokens=30)
+    output_ids = caption_model.generate(**inputs, max_new_tokens=20)
     caption = caption_processor.decode(output_ids[0], skip_special_tokens=True)
-    return caption.strip()
+    return _clean_caption(caption.strip())
 
 
 def generate_story(caption):
-    """Generate a child-friendly English story (~50–100 words) from a caption."""
-    _, _, storyteller = load_pipelines()
+    """Generate a child-friendly English story (~50–100 words) from a caption.
 
-    prompt = (
-        "Write a happy short story for children aged 3 to 10. "
-        "Use simple English words. No scary parts. "
-        f"The story is about: {caption}. Story:\n"
+    distilgpt2 continues text (it is not an instruction chat model), so we
+    seed a story opening and block repetitive junk.
+    """
+    _, _, storyteller = load_pipelines()
+    caption = _clean_caption(caption)
+
+    # Seed for continuation — works much better than "Write a story:" prompts.
+    seed = (
+        f"Once upon a time, there was a happy day for children. "
+        f"They saw {caption}. Then "
     )
 
     min_words, max_words = 50, 100
-    story = ""
     pad_token_id = getattr(storyteller.tokenizer, "eos_token_id", None)
 
-    for attempt in range(3):
-        outputs = storyteller(
-            prompt,
-            max_new_tokens=120 + attempt * 40,
-            do_sample=True,
-            temperature=0.8,
-            top_p=0.9,
-            truncation=True,
-            pad_token_id=pad_token_id,
-        )
-        text = outputs[0]["generated_text"]
-        if text.startswith(prompt):
-            story = text[len(prompt) :].strip()
-        else:
-            story = text.replace(prompt, "", 1).strip()
-
-        story = " ".join(story.split())
-        words = story.split()
-
-        if len(words) > max_words:
-            story = " ".join(words[:max_words])
-            if not story.endswith((".", "!", "?")):
-                story += "."
-            words = story.split()
-
-        if len(words) >= min_words:
-            return story
-
-    filler = (
-        "They played together and laughed under the bright sun. "
-        "Everyone felt happy, kind, and safe. "
-        "It was a wonderful day to remember."
+    outputs = storyteller(
+        seed,
+        max_new_tokens=70,
+        do_sample=True,
+        temperature=0.85,
+        top_p=0.9,
+        repetition_penalty=1.35,
+        no_repeat_ngram_size=3,
+        truncation=True,
+        pad_token_id=pad_token_id,
     )
+    text = outputs[0]["generated_text"]
+    story = " ".join(text.split())
+
+    # Drop trailing half-sentence junk sometimes left by GPT-2
+    story = re.split(r"(?<=[.!?])\s+", story)
+    story = " ".join(s for s in story if s.strip())
+
     words = story.split()
-    while len(words) < min_words:
-        story = (story + " " + filler).strip()
+    if len(words) > max_words:
+        story = " ".join(words[:max_words])
+        if not story.endswith((".", "!", "?")):
+            story += "."
+
+    if _looks_like_bad_story(story) or len(story.split()) < min_words:
+        story = _template_story(caption)
+
+    words = story.split()
+    if len(words) < min_words:
+        story = _template_story(caption)
         words = story.split()
     if len(words) > max_words:
         story = " ".join(words[:max_words])
         if not story.endswith((".", "!", "?")):
             story += "."
+
     return story
 
 
@@ -186,12 +224,15 @@ def main():
     )
 
     st.title("Story Time")
-    st.info(f"Build: {APP_BUILD}  — if you do not see this line, Cloud is still on an old deploy.")
+    st.info(
+        f"Build: {APP_BUILD} — if you do not see this line, Cloud is still on an old deploy."
+    )
     st.markdown("### Upload a picture. I will tell you a short story!")
     st.write("For children ages 3–10. Happy stories only.")
     st.caption(
         "Please use real everyday photos (park, animals, family). "
-        "Do not use TV characters such as Peppa Pig."
+        "Do not use TV characters such as Peppa Pig. "
+        "First Generate can take a few minutes while models load; later is faster."
     )
 
     with st.expander("Safety tips for grown-ups", expanded=False):
@@ -204,9 +245,16 @@ def main():
             - A grown-up should stay nearby while a child uses the app.
             - The app also uses a **simple keyword gate** on captions and stories
               (not a full AI safety model).
-            - First run may take a minute while models load.
+            - First run may take a few minutes while models load on Streamlit Cloud.
             """
         )
+
+    # Warm models once per session so later Generate clicks are quicker.
+    if "models_warmed" not in st.session_state:
+        with st.spinner("Loading models (first visit only — please wait)..."):
+            load_pipelines()
+        st.session_state.models_warmed = True
+        st.success("Models ready. Upload a picture and press Generate Story.")
 
     uploaded = st.file_uploader(
         "Choose a picture",
@@ -233,9 +281,7 @@ def main():
         caption = None
         story = None
 
-        with st.spinner(
-            "Making your story... This may take a minute the first time."
-        ):
+        with st.spinner("Making your story..."):
             try:
                 caption = caption_image(image)
             except Exception as err:
