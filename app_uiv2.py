@@ -16,7 +16,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "SUBMIT-UIv2e-20260919"
+APP_BUILD = "SUBMIT-UIv2f-20260919"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
@@ -180,7 +180,7 @@ def text_to_speech(story):
 
 
 def render_karaoke_story(story, audio_bytes):
-    """Show story with word highlight roughly synced to audio playback."""
+    """Fixed-size story panel; auto-scroll words while audio plays."""
     words = story.split()
     spans = [
         f'<span class="w" id="w{i}">{html.escape(w)}</span>'
@@ -189,18 +189,24 @@ def render_karaoke_story(story, audio_bytes):
     story_html = " ".join(spans)
     b64 = base64.b64encode(audio_bytes).decode("ascii")
     n = len(words)
+    # FRAME_H must match .pic-frame / .story-empty (380px)
+    frame_h = 380
     component = f"""
     <!DOCTYPE html><html><head>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap" rel="stylesheet">
       <style>
-        body {{ margin:0; font-family:'Nunito',system-ui,sans-serif; background:transparent; color:#2b2b2b; }}
-        .panel {{ background:#fff9e8; border:5px solid #ff8fab; border-radius:32px; padding:16px 18px;
-          box-shadow:0 10px 0 #ffc2d4; height:380px; display:flex; flex-direction:column; }}
-        .label {{ font-weight:900; color:#ff4d6d; font-size:1.15rem; margin-bottom:10px; }}
-        .story {{ flex:1; overflow:auto; font-size:1.35rem; line-height:1.75; font-weight:700; }}
+        html, body {{ margin:0; padding:0; height:{frame_h}px; overflow:hidden;
+          font-family:'Nunito',system-ui,sans-serif; background:transparent; color:#2b2b2b; }}
+        .panel {{ background:#fff9e8; border:6px solid #ff8fab; border-radius:32px;
+          box-sizing:border-box; height:{frame_h}px; width:100%;
+          padding:12px 14px 10px 14px; box-shadow:0 10px 0 #ffc2d4;
+          display:flex; flex-direction:column; }}
+        .label {{ font-weight:900; color:#ff4d6d; font-size:1.05rem; margin:0 0 6px 0; flex:0 0 auto; }}
+        .story {{ flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
+          font-size:1.3rem; line-height:1.7; font-weight:700; scroll-behavior:smooth; }}
         .w {{ padding:1px 3px; border-radius:8px; transition:background .12s,color .12s,transform .12s; }}
         .w.on {{ background:#ffe066; color:#d00000; transform:scale(1.06); box-shadow:0 0 0 2px #ffd60a; }}
-        audio {{ width:100%; margin-top:12px; }}
+        audio {{ width:100%; height:32px; margin-top:8px; flex:0 0 auto; }}
       </style></head><body>
       <div class="panel">
         <div class="label">Your story</div>
@@ -208,11 +214,20 @@ def render_karaoke_story(story, audio_bytes):
         <audio id="player" controls autoplay src="data:audio/mp3;base64,{b64}"></audio>
       </div>
       <script>
-        const n={n}; const player=document.getElementById('player'); let last=-1;
+        const n={n}; const player=document.getElementById('player');
+        const box=document.getElementById('story'); let last=-1;
         function paint(i){{
           if(i===last) return;
           if(last>=0){{ const p=document.getElementById('w'+last); if(p) p.classList.remove('on'); }}
-          if(i>=0 && i<n){{ const c=document.getElementById('w'+i); if(c){{ c.classList.add('on'); c.scrollIntoView({{block:'nearest',behavior:'smooth'}}); }} }}
+          if(i>=0 && i<n){{
+            const c=document.getElementById('w'+i);
+            if(c){{
+              c.classList.add('on');
+              // Keep highlighted word near vertical center of story box
+              const top = c.offsetTop - (box.clientHeight / 2) + (c.offsetHeight / 2);
+              box.scrollTo({{ top: Math.max(0, top), behavior: 'smooth' }});
+            }}
+          }}
           last=i;
         }}
         player.addEventListener('timeupdate',()=>{{
@@ -222,7 +237,8 @@ def render_karaoke_story(story, audio_bytes):
         player.addEventListener('ended',()=>paint(-1));
       </script></body></html>
     """
-    components.html(component, height=430, scrolling=False)
+    # iframe height = frame only (no extra gap under the story box)
+    components.html(component, height=frame_h, scrolling=False)
 
 
 
@@ -247,7 +263,9 @@ def inject_kid_theme():
 
         /* Fixed picture frame (left) */
         .pic-frame {
-          height: 380px; border-radius: 32px; border: 6px solid #fff;
+          height: 380px; min-height: 380px; max-height: 380px;
+          width: 100%; box-sizing: border-box;
+          border-radius: 32px; border: 6px solid #fff;
           box-shadow: 0 10px 0 #ff85a1, 0 18px 30px rgba(90,24,154,0.18);
           overflow: hidden; margin-bottom: 0.55rem;
           background: linear-gradient(160deg, #cdb4db, #ffc8dd 55%, #bde0fe);
@@ -300,11 +318,15 @@ def inject_kid_theme():
         }
 
         .story-empty {
-          height:380px;border-radius:32px;border:5px dashed #ffb3c1;
-          background:rgba(255,255,255,0.55);display:flex;align-items:center;
-          justify-content:center;color:#9d4edd;font-weight:900;font-size:1.35rem;
-          text-align:center;padding:1.2rem; box-shadow:0 10px 0 rgba(255,133,161,0.25);
+          height:380px; min-height:380px; max-height:380px; width:100%;
+          box-sizing:border-box; border-radius:32px; border:6px solid #ff8fab;
+          background:#fff9e8; display:flex; align-items:center;
+          justify-content:center; color:#9d4edd; font-weight:900; font-size:1.35rem;
+          text-align:center; padding:1.2rem; box-shadow:0 10px 0 #ffc2d4;
         }
+        /* Keep iframe / empty story slot from shifting layout */
+        iframe { border: none !important; }
+        [data-testid="stVerticalBlockBorderWrapper"] { overflow: visible; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -423,9 +445,11 @@ def main():
             render_karaoke_story(story, audio_bytes)
         else:
             st.markdown(
-                '<div class="story-empty">Your story will appear here 📖<br/>'
+                '<div class="story-empty">'
+                '<div><div style="color:#ff4d6d;font-weight:900;font-size:1.05rem;margin-bottom:0.6rem;">Your story</div>'
+                "Waiting for a story 📖<br/>"
                 '<span style="font-size:1rem;font-weight:800;opacity:0.8;">'
-                "Words glow while it is read aloud</span></div>",
+                "Words glow and scroll while it is read aloud</span></div></div>",
                 unsafe_allow_html=True,
             )
 
