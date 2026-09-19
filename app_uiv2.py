@@ -1,4 +1,4 @@
-"""ISOM5240 Individual Lab — Storytelling App (submit: landscape kid UI)."""
+"""ISOM5240 Individual Lab  Storytelling App (submit: landscape kid UI)."
 
 import base64
 import html
@@ -16,7 +16,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "SUBMIT-UIv2f-20260919"
+APP_BUILD = "SUBMIT-UIv2g-20260919"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
@@ -275,46 +275,68 @@ def inject_kid_theme():
         .pic-empty { text-align:center; color:#5a189a; font-weight:900; font-size:1.35rem;
           padding:1rem; text-shadow:1px 1px 0 #fff; }
 
-        /* Bottom button row — centered twin pills */
-        .btn-row-hint { text-align:center; margin:0.1rem 0 0.25rem 0; }
+        /* Twin action pills under LEFT pic frame only  equal width, no overlap */
         .gen-status {
-          text-align:center; font-weight:900; color:#5a189a; font-size:0.95rem;
-          background:rgba(255,255,255,0.75); border-radius:999px; padding:0.35rem 0.8rem;
-          margin:0 0 0.35rem 0; border:2px solid #ff85a1;
+          text-align:center; font-weight:900; color:#5a189a; font-size:0.9rem;
+          background:rgba(255,255,255,0.85); border-radius:999px; padding:0.3rem 0.7rem;
+          margin:0.35rem 0 0 0; border:2px solid #ff85a1;
         }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+          overflow: hidden !important;
+        }
+        .stButton { width: 100% !important; }
         .stButton > button {
           background: linear-gradient(90deg,#ff85a1,#ffd60a) !important;
           color:#3c096c !important; border:0 !important; border-radius:999px !important;
           font-weight:900 !important; font-size:1.05rem !important;
-          height: 3.1rem !important; min-height: 3.1rem !important;
-          padding: 0 0.8rem !important;
+          height: 3.2rem !important; min-height: 3.2rem !important; max-height: 3.2rem !important;
+          padding: 0 0.6rem !important;
           box-shadow: 0 6px 0 #e85d75 !important; margin: 0 !important;
           width: 100% !important;
         }
+        /* Upload = blue twin pill (match Generate size) */
         div[data-testid="stFileUploader"] {
           background: transparent !important; border: none !important; padding: 0 !important;
+          margin: 0 !important;
         }
-        div[data-testid="stFileUploader"] section {
-          min-height: 3.1rem !important; max-height: 3.1rem !important; height: 3.1rem !important;
+        div[data-testid="stFileUploader"] section,
+        div[data-testid="stFileUploaderDropzone"] {
+          min-height: 3.2rem !important; max-height: 3.2rem !important; height: 3.2rem !important;
           border-radius: 999px !important; border: 0 !important;
           box-shadow: 0 6px 0 #4895ef !important;
           background: linear-gradient(90deg, #4cc9f0, #4361ee) !important;
           display: flex !important; align-items: center !important; justify-content: center !important;
-          padding: 0 0.8rem !important; overflow: hidden !important;
+          padding: 0 0.5rem !important; overflow: hidden !important;
+          gap: 0 !important;
         }
-        div[data-testid="stFileUploader"] section > div {
-          color: #fff !important; font-weight: 900 !important; font-size: 1.05rem !important;
-          text-align: center !important;
+        /* Hide native "Browse files" / limit chrome; show one label */
+        div[data-testid="stFileUploaderDropzoneInstructions"] {
+          display: flex !important; align-items: center !important; justify-content: center !important;
+          width: 100% !important;
         }
-        div[data-testid="stFileUploader"] section small,
-        div[data-testid="stFileUploader"] section span[data-testid="stFileUploaderFileName"],
-        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] span {
-          color: #fff !important; font-weight: 800 !important;
+        div[data-testid="stFileUploaderDropzoneInstructions"] > div {
+          display: flex !important; flex-direction: row !important; align-items: center !important;
+          justify-content: center !important; gap: 0.35rem !important;
+        }
+        div[data-testid="stFileUploaderDropzoneInstructions"] span,
+        div[data-testid="stFileUploaderDropzoneInstructions"] small,
+        div[data-testid="stFileUploaderDropzoneInstructions"] p {
+          font-size: 0 !important; line-height: 0 !important; color: transparent !important;
+        }
+        div[data-testid="stFileUploaderDropzoneInstructions"] > div::after {
+          content: " Upload Picture";
+          font-size: 1.05rem !important; line-height: 1.2 !important;
+          font-weight: 900 !important; color: #fff !important;
+          white-space: nowrap;
+        }
+        div[data-testid="stFileUploader"] button {
+          display: none !important;
         }
         div[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] {
-          background: rgba(255,255,255,0.85) !important;
+          background: rgba(255,255,255,0.9) !important;
           border-radius: 14px !important;
-          margin-top: 0.35rem !important;
+          margin-top: 0.4rem !important;
+          max-width: 100% !important;
         }
 
         .story-empty {
@@ -334,9 +356,9 @@ def inject_kid_theme():
 
 
 def main():
-    """Landscape kid UI — pipeline logic stays in functions above."""
+    """Landscape kid UI  pipeline logic stays in functions above."""
     st.set_page_config(
-        page_title="Story Time", page_icon="🌈",
+        page_title="Story Time", page_icon="",
         layout="wide", initial_sidebar_state="collapsed",
     )
     inject_kid_theme()
@@ -373,17 +395,16 @@ def main():
         else:
             st.markdown(
                 '<div class="pic-frame"><div class="pic-empty">'
-                "Your photo goes here ✨<br/>"
+                "Your photo goes here \u2728<br/>"
                 '<span style="font-size:0.95rem;opacity:0.85;">use Upload Picture below</span>'
                 "</div></div>",
                 unsafe_allow_html=True,
             )
 
-        # 2+3) Twin pills centered under the frame: Generate | Upload
-        _pad_l, mid_l, mid_r, _pad_r = st.columns([0.12, 0.38, 0.38, 0.12], gap="small")
+        # 2+3) Under LEFT frame only: Generate | Upload side-by-side (equal)
+        mid_l, mid_r = st.columns(2, gap="medium")
         with mid_l:
-            gen = st.button("✨ Generate Story", use_container_width=True, type="primary")
-            gen_status = st.empty()  # status sits on/under Generate
+            gen = st.button(" Generate Story", use_container_width=True, type="primary")
         with mid_r:
             uploaded = st.file_uploader(
                 "Upload Picture",
@@ -392,6 +413,12 @@ def main():
                 help="Choose a park / animal / family photo",
                 key="photo_uploader",
             )
+        # Status sits under the Generate column (same width as that button)
+        _s1, _s2 = st.columns(2, gap="medium")
+        with _s1:
+            gen_status = st.empty()
+        with _s2:
+            st.empty()
 
         if uploaded is not None:
             try:
@@ -447,7 +474,7 @@ def main():
             st.markdown(
                 '<div class="story-empty">'
                 '<div><div style="color:#ff4d6d;font-weight:900;font-size:1.05rem;margin-bottom:0.6rem;">Your story</div>'
-                "Waiting for a story 📖<br/>"
+                "Waiting for a story <br/>"
                 '<span style="font-size:1rem;font-weight:800;opacity:0.8;">'
                 "Words glow and scroll while it is read aloud</span></div></div>",
                 unsafe_allow_html=True,
