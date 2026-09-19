@@ -1,4 +1,4 @@
-"""ISOM5240 Individual Lab — Storytelling App (ui-v2 landscape kid UI)."""
+"""ISOM5240 Individual Lab — Storytelling App (submit: landscape kid UI)."""
 
 import base64
 import html
@@ -16,7 +16,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "UI-v2-LANDSCAPE-20260919"
+APP_BUILD = "SUBMIT-UIv2-20260919"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
