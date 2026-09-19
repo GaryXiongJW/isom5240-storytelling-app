@@ -141,6 +141,17 @@ def main():
     st.markdown("### Upload a picture. I will tell you a short story!")
     st.write("For children ages 3–10. Happy stories only.")
 
+    with st.expander("Safety tips for grown-ups", expanded=False):
+        st.markdown(
+            """
+            - Use **kind, everyday photos** (animals, park, family fun).
+            - Please **do not upload** scary, violent, or private pictures.
+            - Stories are meant to be **happy and simple** — no scary themes.
+            - A grown-up should stay nearby while a child uses the app.
+            - First run may take a minute while models load.
+            """
+        )
+
     uploaded = st.file_uploader(
         "Choose a picture",
         type=["jpg", "jpeg", "png"],
@@ -151,25 +162,57 @@ def main():
         st.info("Please upload a picture to begin.")
         return
 
-    image = Image.open(uploaded)
+    try:
+        image = Image.open(uploaded)
+        image = image.convert("RGB")
+    except Exception:
+        st.error(
+            "I could not open that file. Please try another JPG or PNG picture."
+        )
+        return
+
     st.image(image, caption="Your picture", use_container_width=True)
 
     if st.button("Generate Story", type="primary"):
-        with st.spinner("Making your story... This may take a minute the first time."):
-            load_pipelines()
-            caption = caption_image(image)
-            story = generate_story(caption)
-            audio_bytes = text_to_speech(story)
+        try:
+            with st.spinner(
+                "Making your story... This may take a minute the first time."
+            ):
+                load_pipelines()
+                caption = caption_image(image)
+                if not caption:
+                    st.warning(
+                        "I could not describe that picture. "
+                        "Please try a clearer photo and press Generate Story again."
+                    )
+                    return
 
-        st.subheader("What I see")
-        st.write(caption)
+                story = generate_story(caption)
+                if not story or len(story.split()) < 50:
+                    st.warning(
+                        "The story was too short. Please press Generate Story again."
+                    )
+                    return
 
-        st.subheader("Your story")
-        st.write(story)
-        st.caption(f"Word count: {len(story.split())} (target 50–100)")
+                audio_bytes = text_to_speech(story)
 
-        st.subheader("Listen")
-        st.audio(audio_bytes, format="audio/wav")
+            st.subheader("What I see")
+            st.write(caption)
+
+            st.subheader("Your story")
+            st.write(story)
+            st.caption(f"Word count: {len(story.split())} (target 50–100)")
+
+            st.subheader("Listen")
+            st.audio(audio_bytes, format="audio/wav")
+            st.success("Done! You can upload another picture anytime.")
+
+        except Exception:
+            st.error(
+                "Something went wrong while making the story. "
+                "Please try again with a different picture, "
+                "or wait a moment and press Generate Story again."
+            )
 
 
 if __name__ == "__main__":
