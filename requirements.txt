@@ -1,1 +1,7 @@
-# Dependencies will be filled in Step 2
+streamlit
+transformers
+torch
+pillow
+soundfile
+sentencepiece
+numpy
