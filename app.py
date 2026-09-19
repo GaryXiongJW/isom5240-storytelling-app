@@ -1,6 +1,7 @@
 """ISOM5240 Individual Lab — Storytelling App for children (ages 3–10)."""
 
 import streamlit as st
+from PIL import Image
 from transformers import pipeline
 
 
@@ -21,3 +22,19 @@ def load_pipelines():
         model="facebook/mms-tts-eng",
     )
     return captioner, storyteller, tts
+
+
+def caption_image(image):
+    """Convert image to RGB and return a short English caption via BLIP."""
+    captioner, _, _ = load_pipelines()
+
+    if not isinstance(image, Image.Image):
+        image = Image.open(image)
+    image = image.convert("RGB")
+
+    result = captioner(image)
+    if isinstance(result, list) and result:
+        return (result[0].get("generated_text") or "").strip()
+    if isinstance(result, dict):
+        return (result.get("generated_text") or "").strip()
+    return str(result).strip()
