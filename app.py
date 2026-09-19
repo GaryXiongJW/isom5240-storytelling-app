@@ -12,6 +12,9 @@ from transformers import (
     pipeline,
 )
 
+# Visible on the app page so we know Streamlit Cloud pulled the latest commit.
+APP_BUILD = "BLIP-v3-20260919"
+
 # Simple keyword gate (not an AI safety model) — blocks obvious unsafe words.
 UNSAFE_KEYWORDS = {
     "kill",
@@ -57,8 +60,7 @@ def load_pipelines():
     Caption uses BLIP (HF). Story uses distilgpt2 (HF).
     TTS uses gTTS in text_to_speech() for Streamlit Cloud RAM.
     """
-    # Newer transformers removed the "image-to-text" pipeline task name,
-    # so we load BLIP with Processor + Model (still Hugging Face).
+    # Do NOT use pipeline("image-to-text") — removed in newer transformers.
     caption_processor = BlipProcessor.from_pretrained(
         "Salesforce/blip-image-captioning-base"
     )
@@ -184,6 +186,7 @@ def main():
     )
 
     st.title("Story Time")
+    st.info(f"Build: {APP_BUILD}  — if you do not see this line, Cloud is still on an old deploy.")
     st.markdown("### Upload a picture. I will tell you a short story!")
     st.write("For children ages 3–10. Happy stories only.")
     st.caption(
