@@ -300,7 +300,6 @@ def inject_kid_theme():
         }
 
         .story-empty {
-        .story-empty {
           height:380px;border-radius:32px;border:5px dashed #ffb3c1;
           background:rgba(255,255,255,0.55);display:flex;align-items:center;
           justify-content:center;color:#9d4edd;font-weight:900;font-size:1.35rem;
@@ -361,11 +360,9 @@ def main():
         # 2+3) Twin pills centered under the frame: Generate | Upload
         _pad_l, mid_l, mid_r, _pad_r = st.columns([0.12, 0.38, 0.38, 0.12], gap="small")
         with mid_l:
-            gen_status = st.empty()
             gen = st.button("✨ Generate Story", use_container_width=True, type="primary")
+            gen_status = st.empty()  # status sits on/under Generate
         with mid_r:
-            # spacer so Upload aligns with Generate button (status chip only on left)
-            st.markdown('<div style="height:0.15rem;"></div>', unsafe_allow_html=True)
             uploaded = st.file_uploader(
                 "Upload Picture",
                 type=["jpg", "jpeg", "png"],
