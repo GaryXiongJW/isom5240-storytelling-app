@@ -114,3 +114,63 @@ def text_to_speech(story):
     buffer = io.BytesIO()
     sf.write(buffer, audio, sampling_rate, format="WAV")
     return buffer.getvalue()
+
+
+def main():
+    """Streamlit UI only — all model work stays in the functions above."""
+    st.set_page_config(
+        page_title="Story Time",
+        page_icon="📖",
+        layout="centered",
+    )
+
+    st.markdown(
+        """
+        <style>
+        html, body, [class*="css"]  {
+            font-size: 1.15rem;
+        }
+        h1 { font-size: 2.4rem !important; }
+        h2, h3 { font-size: 1.6rem !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.title("Story Time")
+    st.markdown("### Upload a picture. I will tell you a short story!")
+    st.write("For children ages 3–10. Happy stories only.")
+
+    uploaded = st.file_uploader(
+        "Choose a picture",
+        type=["jpg", "jpeg", "png"],
+        help="Pick a clear photo of animals, a park, or family fun.",
+    )
+
+    if uploaded is None:
+        st.info("Please upload a picture to begin.")
+        return
+
+    image = Image.open(uploaded)
+    st.image(image, caption="Your picture", use_container_width=True)
+
+    if st.button("Generate Story", type="primary"):
+        with st.spinner("Making your story... This may take a minute the first time."):
+            load_pipelines()
+            caption = caption_image(image)
+            story = generate_story(caption)
+            audio_bytes = text_to_speech(story)
+
+        st.subheader("What I see")
+        st.write(caption)
+
+        st.subheader("Your story")
+        st.write(story)
+        st.caption(f"Word count: {len(story.split())} (target 50–100)")
+
+        st.subheader("Listen")
+        st.audio(audio_bytes, format="audio/wav")
+
+
+if __name__ == "__main__":
+    main()
