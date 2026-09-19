@@ -3,9 +3,8 @@
 import io
 import re
 
-import numpy as np
-import soundfile as sf
 import streamlit as st
+from gtts import gTTS
 from PIL import Image
 from transformers import pipeline
 
@@ -48,34 +47,21 @@ UNSAFE_KEYWORDS = {
 
 
 @st.cache_resource
-def _load_captioner():
-    return pipeline(
+def load_pipelines():
+    """Load Hugging Face pipelines once; reuse across Streamlit reruns.
+
+    Caption + story use HF. TTS uses gTTS in text_to_speech() to fit
+    Streamlit Cloud RAM (brief allows gTTS / HF TTS / pyttsx3).
+    """
+    captioner = pipeline(
         "image-to-text",
         model="Salesforce/blip-image-captioning-base",
     )
-
-
-@st.cache_resource
-def _load_storyteller():
-    return pipeline(
+    storyteller = pipeline(
         "text-generation",
         model="distilgpt2",
     )
-
-
-@st.cache_resource
-def _load_tts():
-    # HF TTS (not gTTS / pyttsx3) — small English model for Streamlit Cloud
-    return pipeline(
-        "text-to-speech",
-        model="facebook/mms-tts-eng",
-    )
-
-
-@st.cache_resource
-def load_pipelines():
-    """Load Hugging Face pipelines once; reuse across Streamlit reruns."""
-    return _load_captioner(), _load_storyteller(), _load_tts()
+    return captioner, storyteller
 
 
 def is_kid_safe_text(text):
@@ -91,7 +77,7 @@ def is_kid_safe_text(text):
 
 def caption_image(image):
     """Convert image to RGB and return a short English caption via BLIP."""
-    captioner = _load_captioner()
+    captioner, _ = load_pipelines()
 
     if not isinstance(image, Image.Image):
         image = Image.open(image)
@@ -107,7 +93,7 @@ def caption_image(image):
 
 def generate_story(caption):
     """Generate a child-friendly English story (~50–100 words) from a caption."""
-    storyteller = _load_storyteller()
+    _, storyteller = load_pipelines()
 
     prompt = (
         "Write a happy short story for children aged 3 to 10. "
@@ -164,20 +150,9 @@ def generate_story(caption):
 
 
 def text_to_speech(story):
-    """Convert story text to WAV audio bytes using Hugging Face TTS."""
-    tts = _load_tts()
-
-    # Keep input shorter for Cloud RAM / MMS stability
-    spoken = " ".join(story.split()[:80])
-    result = tts(spoken)
-    audio = result["audio"]
-    if isinstance(audio, (list, tuple)):
-        audio = audio[0]
-    audio = np.asarray(audio, dtype=np.float32).squeeze()
-    sampling_rate = int(result["sampling_rate"])
-
+    """Convert story text to MP3 bytes using gTTS (Cloud-friendly)."""
     buffer = io.BytesIO()
-    sf.write(buffer, audio, sampling_rate, format="WAV")
+    gTTS(text=story, lang="en").write_to_fp(buffer)
     return buffer.getvalue()
 
 
@@ -321,7 +296,7 @@ def main():
 
         if audio_bytes:
             st.subheader("Listen")
-            st.audio(audio_bytes, format="audio/wav")
+            st.audio(audio_bytes, format="audio/mp3")
             st.success("Done! You can upload another picture anytime.")
         else:
             st.info("Story is ready. Audio could not play this time—try Generate again.")
