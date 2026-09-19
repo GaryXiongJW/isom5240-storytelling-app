@@ -1,4 +1,4 @@
-"""ISOM5240 Individual Lab  Storytelling App (submit: landscape kid UI)."
+"""ISOM5240 Individual Lab — Storytelling App (submit: landscape kid UI)."""
 
 import base64
 import html
@@ -275,7 +275,7 @@ def inject_kid_theme():
         .pic-empty { text-align:center; color:#5a189a; font-weight:900; font-size:1.35rem;
           padding:1rem; text-shadow:1px 1px 0 #fff; }
 
-        /* Twin action pills under LEFT pic frame only  equal width, no overlap */
+        /* Twin action pills under LEFT pic frame only — equal width, no overlap */
         .gen-status {
           text-align:center; font-weight:900; color:#5a189a; font-size:0.9rem;
           background:rgba(255,255,255,0.85); border-radius:999px; padding:0.3rem 0.7rem;
@@ -324,7 +324,7 @@ def inject_kid_theme():
           font-size: 0 !important; line-height: 0 !important; color: transparent !important;
         }
         div[data-testid="stFileUploaderDropzoneInstructions"] > div::after {
-          content: " Upload Picture";
+          content: "📷 Upload Picture";
           font-size: 1.05rem !important; line-height: 1.2 !important;
           font-weight: 900 !important; color: #fff !important;
           white-space: nowrap;
@@ -356,9 +356,9 @@ def inject_kid_theme():
 
 
 def main():
-    """Landscape kid UI  pipeline logic stays in functions above."""
+    """Landscape kid UI — pipeline logic stays in functions above."""
     st.set_page_config(
-        page_title="Story Time", page_icon="",
+        page_title="Story Time", page_icon="🌈",
         layout="wide", initial_sidebar_state="collapsed",
     )
     inject_kid_theme()
@@ -395,7 +395,7 @@ def main():
         else:
             st.markdown(
                 '<div class="pic-frame"><div class="pic-empty">'
-                "Your photo goes here \u2728<br/>"
+                "Your photo goes here ✨<br/>"
                 '<span style="font-size:0.95rem;opacity:0.85;">use Upload Picture below</span>'
                 "</div></div>",
                 unsafe_allow_html=True,
@@ -404,7 +404,7 @@ def main():
         # 2+3) Under LEFT frame only: Generate | Upload side-by-side (equal)
         mid_l, mid_r = st.columns(2, gap="medium")
         with mid_l:
-            gen = st.button(" Generate Story", use_container_width=True, type="primary")
+            gen = st.button("✨ Generate Story", use_container_width=True, type="primary")
         with mid_r:
             uploaded = st.file_uploader(
                 "Upload Picture",
@@ -474,7 +474,7 @@ def main():
             st.markdown(
                 '<div class="story-empty">'
                 '<div><div style="color:#ff4d6d;font-weight:900;font-size:1.05rem;margin-bottom:0.6rem;">Your story</div>'
-                "Waiting for a story <br/>"
+                "Waiting for a story 📖<br/>"
                 '<span style="font-size:1rem;font-weight:800;opacity:0.8;">'
                 "Words glow and scroll while it is read aloud</span></div></div>",
                 unsafe_allow_html=True,
