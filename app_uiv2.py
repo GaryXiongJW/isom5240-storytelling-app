@@ -16,7 +16,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "SUBMIT-UIv2c-20260919"
+APP_BUILD = "SUBMIT-UIv2d-20260919"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
@@ -195,7 +195,7 @@ def render_karaoke_story(story, audio_bytes):
       <style>
         body {{ margin:0; font-family:'Nunito',system-ui,sans-serif; background:transparent; color:#2b2b2b; }}
         .panel {{ background:#fff9e8; border:5px solid #ff8fab; border-radius:32px; padding:16px 18px;
-          box-shadow:0 10px 0 #ffc2d4; height:420px; display:flex; flex-direction:column; }}
+          box-shadow:0 10px 0 #ffc2d4; height:380px; display:flex; flex-direction:column; }}
         .label {{ font-weight:900; color:#ff4d6d; font-size:1.15rem; margin-bottom:10px; }}
         .story {{ flex:1; overflow:auto; font-size:1.35rem; line-height:1.75; font-weight:700; }}
         .w {{ padding:1px 3px; border-radius:8px; transition:background .12s,color .12s,transform .12s; }}
@@ -222,7 +222,8 @@ def render_karaoke_story(story, audio_bytes):
         player.addEventListener('ended',()=>paint(-1));
       </script></body></html>
     """
-    components.html(component, height=470, scrolling=False)
+    components.html(component, height=430, scrolling=False)
+
 
 
 def inject_kid_theme():
@@ -244,33 +245,59 @@ def inject_kid_theme():
           border-radius:999px; padding:2px 12px; font-size:0.7rem; font-weight:800; color:#5a189a;
           margin-top:0.45rem; }
 
+        /* Fixed picture frame (left) */
+        .pic-frame {
+          height: 380px; border-radius: 32px; border: 6px solid #fff;
+          box-shadow: 0 10px 0 #ff85a1, 0 18px 30px rgba(90,24,154,0.18);
+          overflow: hidden; margin-bottom: 0.55rem;
+          background: linear-gradient(160deg, #cdb4db, #ffc8dd 55%, #bde0fe);
+          display: flex; align-items: center; justify-content: center;
+        }
+        .pic-frame img { width:100%; height:100%; object-fit:cover; display:block; }
+        .pic-empty { text-align:center; color:#5a189a; font-weight:900; font-size:1.35rem;
+          padding:1rem; text-shadow:1px 1px 0 #fff; }
+
+        /* Generate = pink/yellow pill */
+        .stButton > button {
+          background: linear-gradient(90deg,#ff85a1,#ffd60a) !important;
+          color:#3c096c !important; border:0 !important; border-radius:999px !important;
+          font-weight:900 !important; font-size:1.15rem !important;
+          height: 3.1rem !important; min-height: 3.1rem !important;
+          padding: 0 1.2rem !important;
+          box-shadow: 0 6px 0 #e85d75 !important; margin: 0.15rem 0 0.45rem 0 !important;
+          width: 100% !important;
+        }
+
+        /* Upload = same size pill, different color (sky blue) */
         div[data-testid="stFileUploader"] {
           background: transparent !important; border: none !important; padding: 0 !important;
         }
         div[data-testid="stFileUploader"] section {
-          min-height: 420px !important; max-height: 420px !important;
-          border-radius: 32px !important; border: 6px solid #fff !important;
-          box-shadow: 0 10px 0 #ff85a1, 0 18px 30px rgba(90,24,154,0.18) !important;
-          background: linear-gradient(160deg, #cdb4db, #ffc8dd 55%, #bde0fe) !important;
+          min-height: 3.1rem !important; max-height: 3.1rem !important; height: 3.1rem !important;
+          border-radius: 999px !important; border: 0 !important;
+          box-shadow: 0 6px 0 #4895ef !important;
+          background: linear-gradient(90deg, #4cc9f0, #4361ee) !important;
           display: flex !important; align-items: center !important; justify-content: center !important;
+          padding: 0 1rem !important; overflow: hidden !important;
         }
         div[data-testid="stFileUploader"] section > div {
-          color: #5a189a !important; font-weight: 900 !important; font-size: 1.45rem !important;
+          color: #fff !important; font-weight: 900 !important; font-size: 1.15rem !important;
           text-align: center !important;
         }
-        .pic-preview {
-          height: 420px; border-radius: 32px; border: 6px solid #fff;
-          box-shadow: 0 10px 0 #ff85a1, 0 18px 30px rgba(90,24,154,0.18);
-          overflow: hidden; margin-bottom: 0.4rem;
+        div[data-testid="stFileUploader"] section small,
+        div[data-testid="stFileUploader"] section span[data-testid="stFileUploaderFileName"],
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] span {
+          color: #fff !important; font-weight: 800 !important;
         }
-        .pic-preview img { width:100%; height:100%; object-fit:cover; display:block; }
+        /* Hide bulky file-list chrome under the pill when possible */
+        div[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] {
+          background: rgba(255,255,255,0.85) !important;
+          border-radius: 14px !important;
+          margin-top: 0.35rem !important;
+        }
 
-        .stButton > button { background:linear-gradient(90deg,#ff85a1,#ffd60a) !important;
-          color:#3c096c !important; border:0 !important; border-radius:999px !important;
-          font-weight:900 !important; font-size:1.2rem !important; padding:0.6rem 1.2rem !important;
-          box-shadow:0 6px 0 #e85d75 !important; margin-top:0.35rem !important; }
         .story-empty {
-          height:420px;border-radius:32px;border:5px dashed #ffb3c1;
+          height:380px;border-radius:32px;border:5px dashed #ffb3c1;
           background:rgba(255,255,255,0.55);display:flex;align-items:center;
           justify-content:center;color:#9d4edd;font-weight:900;font-size:1.35rem;
           text-align:center;padding:1.2rem; box-shadow:0 10px 0 rgba(255,133,161,0.25);
@@ -308,45 +335,51 @@ def main():
     left, right = st.columns(2, gap="large")
 
     with left:
-        uploaded = st.file_uploader(
-            "give me some fun tonight",
-            type=["jpg", "jpeg", "png"],
-            label_visibility="collapsed",
-            help="Tap the frame to add a park / animal / family photo",
-        )
-
-        # Custom empty-state label when no file (uploader label is collapsed)
-        if uploaded is None:
-            st.markdown(
-                """
-                <div style="margin-top:-430px;pointer-events:none;position:relative;z-index:1;
-                  height:420px;display:flex;align-items:center;justify-content:center;">
-                  <div style="text-align:center;color:#5a189a;font-weight:900;font-size:1.6rem;
-                    text-shadow:1px 1px 0 #fff;padding:1rem;">
-                    give me some fun tonight ✨<br/>
-                    <span style="font-size:0.95rem;opacity:0.85;">tap or drop a photo here</span>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        image = None
-        if uploaded is not None:
-            try:
-                image = Image.open(uploaded).convert("RGB")
-            except Exception:
-                st.error("I could not open that file. Please try another JPG or PNG.")
-                return
+        # 1) Fixed picture frame (always same size)
+        image = st.session_state.get("image_pil")
+        if image is not None:
             buf = io.BytesIO()
             image.save(buf, format="PNG")
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
             st.markdown(
-                f'<div class="pic-preview"><img src="data:image/png;base64,{b64}" alt="uploaded" /></div>',
+                f'<div class="pic-frame"><img src="data:image/png;base64,{b64}" alt="uploaded" /></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="pic-frame"><div class="pic-empty">'
+                "Your photo goes here ✨<br/>"
+                '<span style="font-size:0.95rem;opacity:0.85;">use Upload Picture below</span>'
+                "</div></div>",
                 unsafe_allow_html=True,
             )
 
+        # 2) Generate Story button
         gen = st.button("✨ Generate Story", use_container_width=True, type="primary")
+
+        # 3) Upload Picture — same size pill, different color (styled above)
+        uploaded = st.file_uploader(
+            "Upload Picture",
+            type=["jpg", "jpeg", "png"],
+            label_visibility="collapsed",
+            help="Choose a park / animal / family photo",
+            key="photo_uploader",
+        )
+        if uploaded is not None:
+            try:
+                new_image = Image.open(uploaded).convert("RGB")
+                st.session_state.image_pil = new_image
+                image = new_image
+                # Clear old story when a new photo arrives
+                if st.session_state.get("last_upload_name") != uploaded.name:
+                    st.session_state.last_upload_name = uploaded.name
+                    st.session_state.caption = None
+                    st.session_state.story = None
+                    st.session_state.audio_bytes = None
+                    st.rerun()
+            except Exception:
+                st.error("I could not open that file. Please try another JPG or PNG.")
+                return
 
     with right:
         caption = st.session_state.get("caption")
@@ -355,7 +388,7 @@ def main():
 
         if gen:
             if image is None:
-                st.warning("Please add a picture in the fun frame first!")
+                st.warning("Please upload a picture first!")
             else:
                 with st.spinner("Making your story..."):
                     try:
