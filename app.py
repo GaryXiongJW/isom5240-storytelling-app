@@ -6,7 +6,11 @@ import re
 import streamlit as st
 from gtts import gTTS
 from PIL import Image
-from transformers import pipeline
+from transformers import (
+    BlipForConditionalGeneration,
+    BlipProcessor,
+    pipeline,
+)
 
 # Simple keyword gate (not an AI safety model) — blocks obvious unsafe words.
 UNSAFE_KEYWORDS = {
@@ -48,20 +52,24 @@ UNSAFE_KEYWORDS = {
 
 @st.cache_resource
 def load_pipelines():
-    """Load Hugging Face pipelines once; reuse across Streamlit reruns.
+    """Load Hugging Face models once; reuse across Streamlit reruns.
 
-    Caption + story use HF. TTS uses gTTS in text_to_speech() to fit
-    Streamlit Cloud RAM (brief allows gTTS / HF TTS / pyttsx3).
+    Caption uses BLIP (HF). Story uses distilgpt2 (HF).
+    TTS uses gTTS in text_to_speech() for Streamlit Cloud RAM.
     """
-    captioner = pipeline(
-        "image-to-text",
-        model="Salesforce/blip-image-captioning-base",
+    # Newer transformers removed the "image-to-text" pipeline task name,
+    # so we load BLIP with Processor + Model (still Hugging Face).
+    caption_processor = BlipProcessor.from_pretrained(
+        "Salesforce/blip-image-captioning-base"
+    )
+    caption_model = BlipForConditionalGeneration.from_pretrained(
+        "Salesforce/blip-image-captioning-base"
     )
     storyteller = pipeline(
         "text-generation",
         model="distilgpt2",
     )
-    return captioner, storyteller
+    return caption_processor, caption_model, storyteller
 
 
 def is_kid_safe_text(text):
@@ -77,23 +85,21 @@ def is_kid_safe_text(text):
 
 def caption_image(image):
     """Convert image to RGB and return a short English caption via BLIP."""
-    captioner, _ = load_pipelines()
+    caption_processor, caption_model, _ = load_pipelines()
 
     if not isinstance(image, Image.Image):
         image = Image.open(image)
     image = image.convert("RGB")
 
-    result = captioner(image)
-    if isinstance(result, list) and result:
-        return (result[0].get("generated_text") or "").strip()
-    if isinstance(result, dict):
-        return (result.get("generated_text") or "").strip()
-    return str(result).strip()
+    inputs = caption_processor(images=image, return_tensors="pt")
+    output_ids = caption_model.generate(**inputs, max_new_tokens=30)
+    caption = caption_processor.decode(output_ids[0], skip_special_tokens=True)
+    return caption.strip()
 
 
 def generate_story(caption):
     """Generate a child-friendly English story (~50–100 words) from a caption."""
-    _, storyteller = load_pipelines()
+    _, _, storyteller = load_pipelines()
 
     prompt = (
         "Write a happy short story for children aged 3 to 10. "
