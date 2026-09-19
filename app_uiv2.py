@@ -16,7 +16,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "SUBMIT-UIv2d-20260919"
+APP_BUILD = "SUBMIT-UIv2e-20260919"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
@@ -257,18 +257,22 @@ def inject_kid_theme():
         .pic-empty { text-align:center; color:#5a189a; font-weight:900; font-size:1.35rem;
           padding:1rem; text-shadow:1px 1px 0 #fff; }
 
-        /* Generate = pink/yellow pill */
+        /* Bottom button row — centered twin pills */
+        .btn-row-hint { text-align:center; margin:0.1rem 0 0.25rem 0; }
+        .gen-status {
+          text-align:center; font-weight:900; color:#5a189a; font-size:0.95rem;
+          background:rgba(255,255,255,0.75); border-radius:999px; padding:0.35rem 0.8rem;
+          margin:0 0 0.35rem 0; border:2px solid #ff85a1;
+        }
         .stButton > button {
           background: linear-gradient(90deg,#ff85a1,#ffd60a) !important;
           color:#3c096c !important; border:0 !important; border-radius:999px !important;
-          font-weight:900 !important; font-size:1.15rem !important;
+          font-weight:900 !important; font-size:1.05rem !important;
           height: 3.1rem !important; min-height: 3.1rem !important;
-          padding: 0 1.2rem !important;
-          box-shadow: 0 6px 0 #e85d75 !important; margin: 0.15rem 0 0.45rem 0 !important;
+          padding: 0 0.8rem !important;
+          box-shadow: 0 6px 0 #e85d75 !important; margin: 0 !important;
           width: 100% !important;
         }
-
-        /* Upload = same size pill, different color (sky blue) */
         div[data-testid="stFileUploader"] {
           background: transparent !important; border: none !important; padding: 0 !important;
         }
@@ -278,10 +282,10 @@ def inject_kid_theme():
           box-shadow: 0 6px 0 #4895ef !important;
           background: linear-gradient(90deg, #4cc9f0, #4361ee) !important;
           display: flex !important; align-items: center !important; justify-content: center !important;
-          padding: 0 1rem !important; overflow: hidden !important;
+          padding: 0 0.8rem !important; overflow: hidden !important;
         }
         div[data-testid="stFileUploader"] section > div {
-          color: #fff !important; font-weight: 900 !important; font-size: 1.15rem !important;
+          color: #fff !important; font-weight: 900 !important; font-size: 1.05rem !important;
           text-align: center !important;
         }
         div[data-testid="stFileUploader"] section small,
@@ -289,13 +293,13 @@ def inject_kid_theme():
         div[data-testid="stFileUploader"] [data-testid="stFileUploaderDropzoneInstructions"] span {
           color: #fff !important; font-weight: 800 !important;
         }
-        /* Hide bulky file-list chrome under the pill when possible */
         div[data-testid="stFileUploader"] [data-testid="stFileUploaderFile"] {
           background: rgba(255,255,255,0.85) !important;
           border-radius: 14px !important;
           margin-top: 0.35rem !important;
         }
 
+        .story-empty {
         .story-empty {
           height:380px;border-radius:32px;border:5px dashed #ffb3c1;
           background:rgba(255,255,255,0.55);display:flex;align-items:center;
@@ -354,23 +358,27 @@ def main():
                 unsafe_allow_html=True,
             )
 
-        # 2) Generate Story button
-        gen = st.button("✨ Generate Story", use_container_width=True, type="primary")
+        # 2+3) Twin pills centered under the frame: Generate | Upload
+        _pad_l, mid_l, mid_r, _pad_r = st.columns([0.12, 0.38, 0.38, 0.12], gap="small")
+        with mid_l:
+            gen_status = st.empty()
+            gen = st.button("✨ Generate Story", use_container_width=True, type="primary")
+        with mid_r:
+            # spacer so Upload aligns with Generate button (status chip only on left)
+            st.markdown('<div style="height:0.15rem;"></div>', unsafe_allow_html=True)
+            uploaded = st.file_uploader(
+                "Upload Picture",
+                type=["jpg", "jpeg", "png"],
+                label_visibility="collapsed",
+                help="Choose a park / animal / family photo",
+                key="photo_uploader",
+            )
 
-        # 3) Upload Picture — same size pill, different color (styled above)
-        uploaded = st.file_uploader(
-            "Upload Picture",
-            type=["jpg", "jpeg", "png"],
-            label_visibility="collapsed",
-            help="Choose a park / animal / family photo",
-            key="photo_uploader",
-        )
         if uploaded is not None:
             try:
                 new_image = Image.open(uploaded).convert("RGB")
                 st.session_state.image_pil = new_image
                 image = new_image
-                # Clear old story when a new photo arrives
                 if st.session_state.get("last_upload_name") != uploaded.name:
                     st.session_state.last_upload_name = uploaded.name
                     st.session_state.caption = None
@@ -381,31 +389,38 @@ def main():
                 st.error("I could not open that file. Please try another JPG or PNG.")
                 return
 
+        # Generating status sits on the Generate Story button (left mid column)
+        if gen:
+            if image is None:
+                gen_status.markdown(
+                    '<div class="gen-status">Please upload a picture first!</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                with gen_status.container():
+                    with st.spinner("Making your story..."):
+                        try:
+                            caption = caption_image(image)
+                            ok_c, _ = is_kid_safe_text(caption)
+                            if not ok_c:
+                                caption = "happy friends playing together outdoors"
+                            story = generate_story(caption)
+                            ok_s, _ = is_kid_safe_text(story)
+                            if not ok_s:
+                                story = _template_story(caption)
+                            audio_bytes = text_to_speech(story)
+                            st.session_state.caption = caption
+                            st.session_state.story = story
+                            st.session_state.audio_bytes = audio_bytes
+                        except Exception as err:
+                            st.error(
+                                f"Something went wrong. Details: {type(err).__name__}: {err}"
+                            )
+
     with right:
         caption = st.session_state.get("caption")
         story = st.session_state.get("story")
         audio_bytes = st.session_state.get("audio_bytes")
-
-        if gen:
-            if image is None:
-                st.warning("Please upload a picture first!")
-            else:
-                with st.spinner("Making your story..."):
-                    try:
-                        caption = caption_image(image)
-                        ok_c, _ = is_kid_safe_text(caption)
-                        if not ok_c:
-                            caption = "happy friends playing together outdoors"
-                        story = generate_story(caption)
-                        ok_s, _ = is_kid_safe_text(story)
-                        if not ok_s:
-                            story = _template_story(caption)
-                        audio_bytes = text_to_speech(story)
-                        st.session_state.caption = caption
-                        st.session_state.story = story
-                        st.session_state.audio_bytes = audio_bytes
-                    except Exception as err:
-                        st.error(f"Something went wrong. Details: {type(err).__name__}: {err}")
 
         if story and audio_bytes:
             render_karaoke_story(story, audio_bytes)
