@@ -1,5 +1,9 @@
 """ISOM5240 Individual Lab — Storytelling App for children (ages 3–10)."""
 
+import io
+
+import numpy as np
+import soundfile as sf
 import streamlit as st
 from PIL import Image
 from transformers import pipeline
@@ -97,3 +101,16 @@ def generate_story(caption):
         if not story.endswith((".", "!", "?")):
             story += "."
     return story
+
+
+def text_to_speech(story):
+    """Convert story text to WAV audio bytes using Hugging Face TTS."""
+    _, _, tts = load_pipelines()
+
+    result = tts(story)
+    audio = np.asarray(result["audio"]).squeeze()
+    sampling_rate = int(result["sampling_rate"])
+
+    buffer = io.BytesIO()
+    sf.write(buffer, audio, sampling_rate, format="WAV")
+    return buffer.getvalue()
