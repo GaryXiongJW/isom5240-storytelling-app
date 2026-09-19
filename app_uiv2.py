@@ -16,7 +16,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "SUBMIT-UIv2b-20260919"
+APP_BUILD = "SUBMIT-UIv2c-20260919"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
@@ -160,7 +160,6 @@ def generate_story(caption):
         if _looks_like_bad_story(story):
             story = _template_story(caption)
 
-    # Keyword gate inside generate_story — never return unsafe text
     ok, _ = is_kid_safe_text(story)
     if not ok:
         story = _template_story(caption)
@@ -192,19 +191,19 @@ def render_karaoke_story(story, audio_bytes):
     n = len(words)
     component = f"""
     <!DOCTYPE html><html><head>
-      <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800&display=swap" rel="stylesheet">
+      <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap" rel="stylesheet">
       <style>
         body {{ margin:0; font-family:'Nunito',system-ui,sans-serif; background:transparent; color:#2b2b2b; }}
-        .panel {{ background:#fff9e8; border:4px solid #ff8fab; border-radius:28px; padding:14px 16px;
-          box-shadow:0 8px 0 #ffc2d4; height:340px; display:flex; flex-direction:column; }}
-        .label {{ font-weight:800; color:#ff4d6d; font-size:1.05rem; margin-bottom:8px; }}
-        .story {{ flex:1; overflow:auto; font-size:1.25rem; line-height:1.7; font-weight:600; }}
+        .panel {{ background:#fff9e8; border:5px solid #ff8fab; border-radius:32px; padding:16px 18px;
+          box-shadow:0 10px 0 #ffc2d4; height:420px; display:flex; flex-direction:column; }}
+        .label {{ font-weight:900; color:#ff4d6d; font-size:1.15rem; margin-bottom:10px; }}
+        .story {{ flex:1; overflow:auto; font-size:1.35rem; line-height:1.75; font-weight:700; }}
         .w {{ padding:1px 3px; border-radius:8px; transition:background .12s,color .12s,transform .12s; }}
         .w.on {{ background:#ffe066; color:#d00000; transform:scale(1.06); box-shadow:0 0 0 2px #ffd60a; }}
-        audio {{ width:100%; margin-top:10px; }}
+        audio {{ width:100%; margin-top:12px; }}
       </style></head><body>
       <div class="panel">
-        <div class="label">Your story (words glow while reading)</div>
+        <div class="label">Your story</div>
         <div class="story" id="story">{story_html}</div>
         <audio id="player" controls autoplay src="data:audio/mp3;base64,{b64}"></audio>
       </div>
@@ -223,67 +222,59 @@ def render_karaoke_story(story, audio_bytes):
         player.addEventListener('ended',()=>paint(-1));
       </script></body></html>
     """
-    components.html(component, height=400, scrolling=False)
+    components.html(component, height=470, scrolling=False)
 
 
 def inject_kid_theme():
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap');
         html, body, [class*="css"] { font-family: 'Nunito', system-ui, sans-serif !important; }
         .stApp { background: linear-gradient(135deg, #a0e9ff 0%, #ffd6ff 45%, #fff3b0 100%); overflow: hidden; }
-        .block-container { padding-top: 0.6rem !important; padding-bottom: 0.4rem !important; max-width: 1200px !important; }
+        .block-container { padding-top: 0.4rem !important; padding-bottom: 0.3rem !important; max-width: 1180px !important; }
         header[data-testid="stHeader"] { background: transparent; }
         #MainMenu, footer { visibility: hidden; }
-        .hero-title { font-weight:800; font-size:2.2rem; color:#5a189a;
-          text-shadow:2px 2px 0 #fff, 4px 4px 0 #ff85a1; margin:0; }
-        .hero-sub { color:#7b2cbf; font-weight:700; margin:0.15rem 0 0.5rem 0; }
-        .build-chip { display:inline-block; background:#fff; border:2px solid #7b2cbf;
-          border-radius:999px; padding:2px 12px; font-size:0.75rem; font-weight:800; color:#5a189a; }
 
-        /* Upload IS the fun frame — no separate grey box */
-        .upload-wrap { position: relative; margin-bottom: 0.4rem; }
+        .hero-wrap { text-align: center; margin: 0.2rem 0 0.85rem 0; }
+        .hero-title { font-weight:900; font-size:3.1rem; line-height:1.1; color:#5a189a;
+          text-shadow:3px 3px 0 #fff, 6px 6px 0 #ff85a1; margin:0; letter-spacing:-0.02em; }
+        .hero-sub { color:#7b2cbf; font-weight:800; font-size:1.35rem; margin:0.45rem 0 0 0; }
+        .build-chip { display:inline-block; background:#fff; border:2px solid #7b2cbf;
+          border-radius:999px; padding:2px 12px; font-size:0.7rem; font-weight:800; color:#5a189a;
+          margin-top:0.45rem; }
+
         div[data-testid="stFileUploader"] {
-          background: transparent !important;
-          border: none !important;
-          padding: 0 !important;
+          background: transparent !important; border: none !important; padding: 0 !important;
         }
         div[data-testid="stFileUploader"] section {
-          min-height: 360px !important;
-          max-height: 360px !important;
-          border-radius: 32px !important;
-          border: 6px solid #fff !important;
+          min-height: 420px !important; max-height: 420px !important;
+          border-radius: 32px !important; border: 6px solid #fff !important;
           box-shadow: 0 10px 0 #ff85a1, 0 18px 30px rgba(90,24,154,0.18) !important;
           background: linear-gradient(160deg, #cdb4db, #ffc8dd 55%, #bde0fe) !important;
-          display: flex !important;
-          align-items: center !important;
-          justify-content: center !important;
+          display: flex !important; align-items: center !important; justify-content: center !important;
         }
         div[data-testid="stFileUploader"] section > div {
-          color: #5a189a !important;
-          font-weight: 800 !important;
-          font-size: 1.35rem !important;
+          color: #5a189a !important; font-weight: 900 !important; font-size: 1.45rem !important;
           text-align: center !important;
         }
-        /* Hide tiny file-list chrome when empty-looking; keep when file present */
-        [data-testid="stFileUploader"] [data-testid="stMarkdownContainer"] p {
-          font-weight: 800 !important;
-        }
         .pic-preview {
-          height: 360px; border-radius: 32px; border: 6px solid #fff;
+          height: 420px; border-radius: 32px; border: 6px solid #fff;
           box-shadow: 0 10px 0 #ff85a1, 0 18px 30px rgba(90,24,154,0.18);
-          overflow: hidden; margin-bottom: 0.35rem;
+          overflow: hidden; margin-bottom: 0.4rem;
         }
         .pic-preview img { width:100%; height:100%; object-fit:cover; display:block; }
-        .change-hint { text-align:center; font-weight:700; color:#7b2cbf; font-size:0.85rem; margin-bottom:0.4rem; }
 
         .stButton > button { background:linear-gradient(90deg,#ff85a1,#ffd60a) !important;
           color:#3c096c !important; border:0 !important; border-radius:999px !important;
-          font-weight:800 !important; font-size:1.15rem !important; padding:0.55rem 1.2rem !important;
-          box-shadow:0 6px 0 #e85d75 !important; }
-        .caption-pill { background:#fff; border-radius:18px; border:3px solid #90e0ef;
-          padding:8px 12px; font-weight:700; color:#0077b6; min-height:46px; }
+          font-weight:900 !important; font-size:1.2rem !important; padding:0.6rem 1.2rem !important;
+          box-shadow:0 6px 0 #e85d75 !important; margin-top:0.35rem !important; }
+        .story-empty {
+          height:420px;border-radius:32px;border:5px dashed #ffb3c1;
+          background:rgba(255,255,255,0.55);display:flex;align-items:center;
+          justify-content:center;color:#9d4edd;font-weight:900;font-size:1.35rem;
+          text-align:center;padding:1.2rem; box-shadow:0 10px 0 rgba(255,133,161,0.25);
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -298,34 +289,47 @@ def main():
     )
     inject_kid_theme()
 
-    top_l, top_r = st.columns([3, 1])
-    with top_l:
-        st.markdown('<p class="hero-title">Story Time Playground</p>', unsafe_allow_html=True)
-        st.markdown(
-            '<p class="hero-sub">Upload a fun photo. I tell a happy story!</p>',
-            unsafe_allow_html=True,
-        )
-    with top_r:
-        st.markdown(
-            f'<div style="text-align:right;margin-top:10px;">'
-            f'<span class="build-chip">Build: {APP_BUILD}</span></div>',
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        f"""
+        <div class="hero-wrap">
+          <p class="hero-title">Story Time Playground</p>
+          <p class="hero-sub">Upload a fun photo. I tell a happy story!</p>
+          <span class="build-chip">Build: {APP_BUILD}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if "models_warmed" not in st.session_state:
         with st.spinner("Warming up story magic..."):
             load_pipelines()
         st.session_state.models_warmed = True
 
-    left, right = st.columns([1.05, 1.2], gap="medium")
+    left, right = st.columns(2, gap="large")
 
     with left:
-        # Single upload surface = the fun frame
         uploaded = st.file_uploader(
             "give me some fun tonight",
             type=["jpg", "jpeg", "png"],
-            help="Tap or drop a park / animal / family photo here",
+            label_visibility="collapsed",
+            help="Tap the frame to add a park / animal / family photo",
         )
+
+        # Custom empty-state label when no file (uploader label is collapsed)
+        if uploaded is None:
+            st.markdown(
+                """
+                <div style="margin-top:-430px;pointer-events:none;position:relative;z-index:1;
+                  height:420px;display:flex;align-items:center;justify-content:center;">
+                  <div style="text-align:center;color:#5a189a;font-weight:900;font-size:1.6rem;
+                    text-shadow:1px 1px 0 #fff;padding:1rem;">
+                    give me some fun tonight ✨<br/>
+                    <span style="font-size:0.95rem;opacity:0.85;">tap or drop a photo here</span>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         image = None
         if uploaded is not None:
@@ -338,8 +342,7 @@ def main():
             image.save(buf, format="PNG")
             b64 = base64.b64encode(buf.getvalue()).decode("ascii")
             st.markdown(
-                f'<div class="pic-preview"><img src="data:image/png;base64,{b64}" alt="uploaded" /></div>'
-                f'<p class="change-hint">Want a new photo? Use the uploader above the picture.</p>',
+                f'<div class="pic-preview"><img src="data:image/png;base64,{b64}" alt="uploaded" /></div>',
                 unsafe_allow_html=True,
             )
 
@@ -361,7 +364,6 @@ def main():
                         if not ok_c:
                             caption = "happy friends playing together outdoors"
                         story = generate_story(caption)
-                        # Always produce playable gentle story
                         ok_s, _ = is_kid_safe_text(story)
                         if not ok_s:
                             story = _template_story(caption)
@@ -372,28 +374,13 @@ def main():
                     except Exception as err:
                         st.error(f"Something went wrong. Details: {type(err).__name__}: {err}")
 
-        st.markdown("**What I see**")
-        st.markdown(
-            f'<div class="caption-pill">{html.escape(caption or "Waiting for a picture...")}</div>',
-            unsafe_allow_html=True,
-        )
-
         if story and audio_bytes:
             render_karaoke_story(story, audio_bytes)
-            st.caption(f"Word count: {len(story.split())} (target 50–100)")
         else:
             st.markdown(
-                """
-                <div style="height:340px;border-radius:28px;border:4px dashed #ffb3c1;
-                  background:rgba(255,255,255,0.55);display:flex;align-items:center;
-                  justify-content:center;color:#9d4edd;font-weight:800;font-size:1.2rem;
-                  text-align:center;padding:1rem;">
-                  Your story will appear here 📖<br/>
-                  <span style="font-size:0.9rem;font-weight:700;opacity:0.8;">
-                    Words will glow while the story is read aloud
-                  </span>
-                </div>
-                """,
+                '<div class="story-empty">Your story will appear here 📖<br/>'
+                '<span style="font-size:1rem;font-weight:800;opacity:0.8;">'
+                "Words glow while it is read aloud</span></div>",
                 unsafe_allow_html=True,
             )
 
