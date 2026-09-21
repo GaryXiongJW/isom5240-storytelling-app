@@ -16,7 +16,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "SUBMIT-UIv2g-20260919"
+APP_BUILD = "SUBMIT-STORY-v7-20260921"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
@@ -78,55 +78,91 @@ def _clean_caption(caption):
     return caption
 
 
-def _looks_like_bad_story(story):
-    lower = (story or "").lower()
+def _looks_like_bad_story(story, caption=""):
+    """Reject nonsense / off-topic / mid-seed drafts from tiny LMs."""
+    text = " ".join((story or "").split())
+    lower = text.lower()
     if not lower.strip():
         return True
-    if "_" * 5 in (story or ""):
+    if "_" * 5 in text:
         return True
     if lower.count("story:") >= 2 or lower.count("is about:") >= 2:
         return True
     if "it?s" in lower or lower.count("epic adventure") >= 2:
         return True
+    # Mid-seed leftovers like "day for children. They saw..."
+    if not re.match(r"^(once|one day|on a|there was|long ago)", lower):
+        return True
     banned_bits = (
         "boyfriend", "girlfriend", "college", "simpsons", "job out of",
         "beer", "viral", "iced up", "on its own feet", "still breathing",
+        "iced tea", "chocolate milk", "came to their mouths",
+        "received this gift", "those who had eaten", "from that corner",
     )
-    if any(b in lower for b in banned_bits):
+    if any(bit in lower for bit in banned_bits):
         return True
-    if _has_heavy_repetition(story):
+    if _has_heavy_repetition(text):
         return True
-    if len(re.findall(r"[.!?]", story or "")) < 2 and len((story or "").split()) > 40:
+    if len(re.findall(r"[.!?]", text)) < 3:
         return True
+    # Stay grounded in the caption
+    stop = {
+        "with", "their", "this", "that", "from", "they", "were",
+        "have", "been", "into", "over", "under", "about", "group",
+        "them", "then", "when", "what", "your", "some",
+    }
+    cap_words = [
+        w for w in re.findall(r"[a-z]+", (caption or "").lower())
+        if len(w) > 3 and w not in stop
+    ]
+    if cap_words and not any(w in lower for w in cap_words[:6]):
+        return True
+    off_topic = ("tea", "coffee", "milk", "wine", "pizza", "burger", "salary")
+    if any(w in lower.split() for w in off_topic):
+        if not any(w in (caption or "").lower() for w in off_topic):
+            return True
     return False
 
 
 def _template_story(caption):
+    """Kid-friendly coherent story grounded in the image caption."""
     caption = _clean_caption(caption)
     return (
-        f"Once upon a time, on a bright and happy day, friends looked closely "
-        f"and saw {caption}. They waved hello with big smiles and felt brave "
-        f"and kind. Together they played gently, shared a snack, and made a "
-        f"new friend. The sun was warm, the sky was blue, and everyone laughed. "
-        f"When it was time to rest, they said thank you and felt safe. "
-        f"It was a wonderful little adventure to remember."
+        f"Once upon a time, on a sunny morning, children discovered {caption}. "
+        f"They whispered hello so gently. The little ones peeked with curious eyes "
+        f"and soft happy sounds. Everyone shared kind smiles and played carefully "
+        f"in the fresh air. A breeze danced by, and the grass felt cool and green. "
+        f"When the day grew quiet, they waved goodbye and felt warm inside. "
+        f"It was a gentle adventure they would always remember."
     )
 
 
-def caption_image(image):
-    caption_processor, caption_model, _ = load_pipelines()
-    if not isinstance(image, Image.Image):
-        image = Image.open(image)
-    image = image.convert("RGB")
-    inputs = caption_processor(images=image, return_tensors="pt")
-    output_ids = caption_model.generate(
-        **inputs, max_new_tokens=16, num_beams=3, no_repeat_ngram_size=2,
+def _polish_hf_draft(raw, seed, caption):
+    """Rebuild a complete opening; drop mid-seed fragments."""
+    text = " ".join((raw or "").split())
+    text = text.replace("\u2019", "'").replace("\u2018", "'")
+    text = re.sub(r"\?s\b", "'s", text)
+    seed_clean = " ".join(seed.split())
+    if text.lower().startswith(seed_clean.lower()):
+        cont = text[len(seed_clean):].strip()
+    else:
+        m = re.search(r"(?:Then |then )(.+)$", text)
+        cont = m.group(1).strip() if m else ""
+    cont = cont.strip(" ,;:-")
+    if len(cont.split()) < 8:
+        return ""
+    story = (
+        f"Once upon a time, there was a happy day for children. "
+        f"They saw {caption}. Then {cont}"
     )
-    caption = caption_processor.decode(output_ids[0], skip_special_tokens=True)
-    return _clean_caption(caption.strip())
+    story = " ".join(story.split())
+    if not story.endswith((".", "!", "?")):
+        story += "."
+    return story
 
 
 def generate_story(caption):
+    """HF draft first (Model Usage), then coherence gate → caption template."""
     _, _, storyteller = load_pipelines()
     caption = _clean_caption(caption)
     seed = (
@@ -135,36 +171,36 @@ def generate_story(caption):
     )
     min_words, max_words = 50, 100
     pad_token_id = getattr(storyteller.tokenizer, "eos_token_id", None)
-    draft = ""
+    raw = ""
     try:
         outputs = storyteller(
-            seed, max_new_tokens=40, do_sample=True, temperature=0.8,
-            top_p=0.9, repetition_penalty=1.4, no_repeat_ngram_size=3,
+            seed, max_new_tokens=55, do_sample=True, temperature=0.7,
+            top_p=0.85, repetition_penalty=1.5, no_repeat_ngram_size=3,
             truncation=True, pad_token_id=pad_token_id,
         )
-        draft = " ".join(outputs[0]["generated_text"].split())
-        draft = draft.replace("\u2019", "'").replace("\u2018", "'")
-        draft = re.sub(r"\?s\b", "'s", draft)
+        raw = outputs[0]["generated_text"]
     except Exception:
-        draft = ""
+        raw = ""
 
-    if _looks_like_bad_story(draft) or len(draft.split()) < min_words:
+    draft = _polish_hf_draft(raw, seed, caption)
+    use_template = (
+        not draft
+        or len(draft.split()) < min_words
+        or _looks_like_bad_story(draft, caption)
+    )
+    story = _template_story(caption) if use_template else draft
+
+    if _looks_like_bad_story(story, caption):
         story = _template_story(caption)
-    else:
-        story = draft
-        words = story.split()
-        if len(words) > max_words:
-            story = " ".join(words[:max_words])
-            if not story.endswith((".", "!", "?")):
-                story += "."
-        if _looks_like_bad_story(story):
-            story = _template_story(caption)
 
     ok, _ = is_kid_safe_text(story)
     if not ok:
         story = _template_story(caption)
 
     words = story.split()
+    if len(words) < min_words:
+        story = _template_story(caption)
+        words = story.split()
     if len(words) > max_words:
         story = " ".join(words[:max_words])
         if not story.endswith((".", "!", "?")):
@@ -239,6 +275,7 @@ def render_karaoke_story(story, audio_bytes):
     """
     # iframe height = frame only (no extra gap under the story box)
     components.html(component, height=frame_h, scrolling=False)
+
 
 
 
