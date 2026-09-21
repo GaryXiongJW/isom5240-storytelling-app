@@ -278,7 +278,6 @@ def render_karaoke_story(story, audio_bytes):
 
 
 
-
 def inject_kid_theme():
     st.markdown(
         """
