@@ -1,4 +1,4 @@
-"""ISOM5240 Individual Lab — Storytelling App (submit: landscape kid UI)."""
+"""ISOM5240 Individual Lab  Storytelling App (submit: landscape kid UI)."""
 
 import base64
 import html
@@ -16,7 +16,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "SUBMIT-STORY-v7-20260921"
+APP_BUILD = "SUBMIT-STORY-v7b-20260921"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
@@ -161,8 +161,23 @@ def _polish_hf_draft(raw, seed, caption):
     return story
 
 
+
+def caption_image(image):
+    """Hugging Face BLIP caption; returns a short cleaned English caption."""
+    caption_processor, caption_model, _ = load_pipelines()
+    if not isinstance(image, Image.Image):
+        image = Image.open(image)
+    image = image.convert("RGB")
+    inputs = caption_processor(images=image, return_tensors="pt")
+    output_ids = caption_model.generate(
+        **inputs, max_new_tokens=16, num_beams=3, no_repeat_ngram_size=2,
+    )
+    caption = caption_processor.decode(output_ids[0], skip_special_tokens=True)
+    return _clean_caption(caption.strip())
+
+
 def generate_story(caption):
-    """HF draft first (Model Usage), then coherence gate → caption template."""
+    """HF draft first (Model Usage), then coherence gate  caption template."""
     _, _, storyteller = load_pipelines()
     caption = _clean_caption(caption)
     seed = (
@@ -311,7 +326,7 @@ def inject_kid_theme():
         .pic-empty { text-align:center; color:#5a189a; font-weight:900; font-size:1.35rem;
           padding:1rem; text-shadow:1px 1px 0 #fff; }
 
-        /* Twin action pills under LEFT pic frame only — equal width, no overlap */
+        /* Twin action pills under LEFT pic frame only  equal width, no overlap */
         .gen-status {
           text-align:center; font-weight:900; color:#5a189a; font-size:0.9rem;
           background:rgba(255,255,255,0.85); border-radius:999px; padding:0.3rem 0.7rem;
@@ -392,7 +407,7 @@ def inject_kid_theme():
 
 
 def main():
-    """Landscape kid UI — pipeline logic stays in functions above."""
+    """Landscape kid UI  pipeline logic stays in functions above."""
     st.set_page_config(
         page_title="Story Time", page_icon="🌈",
         layout="wide", initial_sidebar_state="collapsed",
