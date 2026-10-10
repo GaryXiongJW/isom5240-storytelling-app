@@ -59,7 +59,7 @@ _SETTINGS = (
     (("mountain", "hill"), "on", "a gentle hill", "the open path", "a cool breeze"),
     (("lake", "river", "boat", "ship", "pool"), "by", "a calm lake", "the still water", "a light breeze"),
     (("sky", "cloud", "clouds", "balloon", "kite", "plane", "airplane"), "under", "a wide blue sky", "the light clouds", "a happy breeze"),
-    (("street", "road", "city", "bus", "traffic", "sidewalk", "truck"), "on", "a friendly street", "the sunny sidewalk", "the bright day"),
+    (("street", "road", "city", "bus", "traffic", "sidewalk", "truck", "building", "parked"), "on", "a friendly street", "the sunny sidewalk", "the bright day"),
     (("room", "bed", "sofa", "couch", "pillow", "indoor"), "in", "a cozy room", "the soft rug", "the quiet house"),
     (("park", "garden", "grass", "playground", "outdoor", "outdoors", "yard"), "at", "a sunny park", "the soft grass", "the open sky"),
 )

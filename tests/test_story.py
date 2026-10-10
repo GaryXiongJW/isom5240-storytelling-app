@@ -74,6 +74,11 @@ class TemplateStoryTests(unittest.TestCase):
         self.assertNotIn("children found children", park.lower())
         self.assertIn("on a friendly street", street.lower())
 
+        parked = app._template_story("an old car parked in front of a building")
+        self.assertIn("car", parked.lower())
+        self.assertIn("street", parked.lower())
+        self.assertNotIn("grass", parked.lower())
+
     def test_short_text_is_extended_without_repeating_a_closer(self):
         short = "Once upon a time, children found a dog. They smiled. The dog sat."
         fitted = app._fit_word_count(short)
