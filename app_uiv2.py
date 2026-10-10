@@ -3,6 +3,7 @@
 import base64
 import html
 import io
+import logging
 import re
 from collections import Counter
 
@@ -16,7 +17,7 @@ from transformers import (
     pipeline,
 )
 
-APP_BUILD = "SUBMIT-STORY-v7b-20260921"
+APP_BUILD = "SUBMIT-STORY-v8-20261010"
 
 UNSAFE_KEYWORDS = {
     "kill", "killed", "killing", "murder", "blood", "bloody", "gun", "guns",
@@ -25,6 +26,70 @@ UNSAFE_KEYWORDS = {
     "bomb", "knife", "hurt", "hate", "abuse", "nude", "naked", "sex",
     "drug", "drugs", "boyfriend", "girlfriend", "college", "beer", "wine",
 }
+
+# Phrases distilgpt2 actually produced in earlier builds. Kept as a backstop
+# after the per-sentence filter, because a tiny base model will still wander.
+BANNED_BITS = (
+    "boyfriend", "girlfriend", "college", "simpsons", "job out of",
+    "beer", "viral", "iced up", "on its own feet", "still breathing",
+    "iced tea", "chocolate milk", "came to their mouths",
+    "received this gift", "those who had eaten", "from that corner",
+)
+
+OFF_TOPIC = ("tea", "coffee", "milk", "wine", "pizza", "burger", "salary")
+
+# Distinct closers so a short-but-clean draft can reach 50 words without
+# repeating a 3-word chunk (that would trip the repetition gate).
+_CLOSERS = (
+    "They used kind words, took turns, and felt safe together.",
+    "Everyone smiled softly and stayed close until rest time.",
+    "The day ended with a warm wave and a happy heart.",
+    "Friends shared a slow game and looked after one another.",
+    "Soft laughter stayed with them as the bright day grew quiet.",
+)
+
+# First matching place wins, so specific scenes stay ahead of "park".
+# Each row is keywords, preposition, place, ground, air.
+_SETTINGS = (
+    (("beach", "ocean", "sea", "sand", "shore", "wave", "waves"), "at", "a sunny beach", "the warm sand", "the soft waves"),
+    (("snow", "winter", "ski"), "in", "the snow", "the white snow", "the quiet air"),
+    (("forest", "woods", "tree", "trees", "jungle"), "in", "a green forest", "the tall trees", "the leafy shade"),
+    (("kitchen", "cake", "pizza", "cookie", "cupcake", "food"), "in", "a cozy kitchen", "the tidy table", "the warm room"),
+    (("night", "moon", "star", "stars"), "on", "a calm evening", "the twinkling stars", "the kind moon"),
+    (("mountain", "hill"), "on", "a gentle hill", "the open path", "a cool breeze"),
+    (("lake", "river", "boat", "ship", "pool"), "by", "a calm lake", "the still water", "a light breeze"),
+    (("sky", "cloud", "clouds", "balloon", "kite", "plane", "airplane"), "under", "a wide blue sky", "the light clouds", "a happy breeze"),
+    (("street", "road", "city", "bus", "traffic", "sidewalk", "truck", "building", "parked"), "on", "a friendly street", "the sunny sidewalk", "the bright day"),
+    (("room", "bed", "sofa", "couch", "pillow", "indoor"), "in", "a cozy room", "the soft rug", "the quiet house"),
+    (("park", "garden", "grass", "playground", "outdoor", "outdoors", "yard"), "at", "a sunny park", "the soft grass", "the open sky"),
+)
+_DEFAULT_SETTING = ("in", "a bright happy place", "the open space", "the gentle light")
+_PEOPLE = (
+    "boy", "girl", "child", "children", "kid", "kids", "baby",
+    "family", "people", "person", "man", "woman", "group", "friend", "friends",
+)
+
+_SUBJECTS = (
+    (("puppy", "dog"), "The dog wagged its tail and waited kindly."),
+    (("kitten", "cat"), "The cat blinked slowly and purred."),
+    (("bird", "birds"), "The bird sang a tiny happy song."),
+    (("duck", "ducks"), "The duck paddled in a small happy line."),
+    (("horse", "pony"), "The horse walked slowly and nodded."),
+    (("rabbit", "bunny"), "The rabbit hopped in a tiny happy circle."),
+    (("teddy", "bear"), "The bear gave a careful, friendly wave."),
+    (("fish",), "The fish swished its tail and sparkled."),
+    (("baby",), "The baby clapped and made a happy sound."),
+    (("boy", "girl", "child", "children", "kid", "kids"), "The children held hands and giggled."),
+    (("family", "people", "person", "man", "woman", "group", "friend", "friends"), "They smiled and stayed close together."),
+    (("flower", "flowers"), "The flowers nodded in the light."),
+    (("ball",), "The ball rolled slowly across the ground."),
+    (("cupcake", "cake"), "Everyone looked at the cake and smiled."),
+    (("bus",), "The bus waited calmly at the stop."),
+    (("truck", "car"), "The car rested quietly for a moment."),
+    (("ship", "boat"), "The boat rocked gently and stayed safe."),
+    (("bicycle", "bike"), "The bike waited for a slow, happy ride."),
+)
+_DEFAULT_ACTION = "Everyone looked around with a kind smile."
 
 
 @st.cache_resource
@@ -78,6 +143,106 @@ def _clean_caption(caption):
     return caption
 
 
+def _has_word(text, word):
+    return re.search(rf"\b{re.escape(word)}\b", (text or "").lower()) is not None
+
+
+def _matches_any(text, words):
+    return any(_has_word(text, word) for word in words)
+
+
+def _pick_setting(caption):
+    for keys, prep, place, ground, air in _SETTINGS:
+        if _matches_any(caption, keys):
+            return prep, place, ground, air
+    return _DEFAULT_SETTING
+
+
+def _lead(caption, variant):
+    """Open in a way that stays grammatical for people and for objects."""
+    if _matches_any(caption, _PEOPLE):
+        if variant == 0:
+            return f"Once upon a time, this happy story began with {caption}."
+        if variant == 1:
+            return f"One day, this happy story began with {caption}."
+        return f"Once upon a time, on a bright day, this story began with {caption}."
+    if variant == 0:
+        return f"Once upon a time, children found {caption}."
+    if variant == 1:
+        return f"One day, a happy group noticed {caption}."
+    return f"Once upon a time, there was a bright day with {caption}."
+
+
+def _pick_action(caption):
+    for keys, action in _SUBJECTS:
+        if _matches_any(caption, keys):
+            return action
+    return _DEFAULT_ACTION
+
+
+def _variant(caption):
+    return sum(ord(char) for char in (caption or "").lower()) % 3
+
+
+def _word_tokens(text):
+    return set(re.findall(r"[a-z']+", (text or "").lower()))
+
+
+def _sentence_ok(sentence, caption):
+    """Keep one model sentence only when it is short, safe, and on topic."""
+    text = " ".join((sentence or "").split())
+    if not text or re.search(r"https?://|www\.|_{3,}|[{}]", text):
+        return False
+    words = text.split()
+    if len(words) < 4 or len(words) > 32:
+        return False
+    lower = text.lower()
+    if any(bit in lower for bit in BANNED_BITS):
+        return False
+    if lower.count("story:") or lower.count("is about:"):
+        return False
+    ok, _ = is_kid_safe_text(text)
+    if not ok or _has_heavy_repetition(text):
+        return False
+    tokens = _word_tokens(text)
+    if any(word in tokens for word in OFF_TOPIC):
+        caption_tokens = _word_tokens(caption)
+        if not any(word in caption_tokens for word in OFF_TOPIC):
+            return False
+    return True
+
+
+def _trim_to_max(story, max_words):
+    words = story.split()
+    if len(words) <= max_words:
+        return story
+    trimmed = " ".join(words[:max_words])
+    ends = list(re.finditer(r"[.!?]", trimmed))
+    if ends:
+        candidate = trimmed[: ends[-1].end()].strip()
+        if len(candidate.split()) >= 50:
+            return candidate
+    if not trimmed.endswith((".", "!", "?")):
+        trimmed += "."
+    return trimmed
+
+
+def _fit_word_count(story, min_words=50, max_words=100):
+    """Pad with distinct closers or cut on a sentence boundary."""
+    story = " ".join((story or "").split())
+    if not story:
+        return ""
+    closer_i = 0
+    while len(story.split()) < min_words and closer_i < len(_CLOSERS):
+        if not story.endswith((".", "!", "?")):
+            story += "."
+        story = f"{story} {_CLOSERS[closer_i]}"
+        closer_i += 1
+    if len(story.split()) > max_words:
+        story = _trim_to_max(story, max_words)
+    return story
+
+
 def _looks_like_bad_story(story, caption=""):
     """Reject nonsense / off-topic / mid-seed drafts from tiny LMs."""
     text = " ".join((story or "").split())
@@ -93,13 +258,7 @@ def _looks_like_bad_story(story, caption=""):
     # Mid-seed leftovers like "day for children. They saw..."
     if not re.match(r"^(once|one day|on a|there was|long ago)", lower):
         return True
-    banned_bits = (
-        "boyfriend", "girlfriend", "college", "simpsons", "job out of",
-        "beer", "viral", "iced up", "on its own feet", "still breathing",
-        "iced tea", "chocolate milk", "came to their mouths",
-        "received this gift", "those who had eaten", "from that corner",
-    )
-    if any(bit in lower for bit in banned_bits):
+    if any(bit in lower for bit in BANNED_BITS):
         return True
     if _has_heavy_repetition(text):
         return True
@@ -117,28 +276,91 @@ def _looks_like_bad_story(story, caption=""):
     ]
     if cap_words and not any(w in lower for w in cap_words[:6]):
         return True
-    off_topic = ("tea", "coffee", "milk", "wine", "pizza", "burger", "salary")
-    if any(w in lower.split() for w in off_topic):
-        if not any(w in (caption or "").lower() for w in off_topic):
+    tokens = _word_tokens(lower)
+    if any(word in tokens for word in OFF_TOPIC):
+        caption_tokens = _word_tokens(caption)
+        if not any(word in caption_tokens for word in OFF_TOPIC):
             return True
     return False
 
 
 def _template_story(caption):
-    """Kid-friendly coherent story grounded in the image caption."""
+    """Kid-friendly story whose place and character follow the caption.
+
+    The old fallback always mentioned cool green grass, so a bus, a sofa,
+    or a beach still became a park. The scene lexicons below keep the
+    read-aloud in the same place as the picture.
+    """
     caption = _clean_caption(caption)
-    return (
-        f"Once upon a time, on a sunny morning, children discovered {caption}. "
-        f"They whispered hello so gently. The little ones peeked with curious eyes "
-        f"and soft happy sounds. Everyone shared kind smiles and played carefully "
-        f"in the fresh air. A breeze danced by, and the grass felt cool and green. "
-        f"When the day grew quiet, they waved goodbye and felt warm inside. "
-        f"It was a gentle adventure they would always remember."
-    )
+    action = _pick_action(caption)
+    prep, place, ground, air = _pick_setting(caption)
+    where = f"{prep} {place}"
+    variant = _variant(caption)
+    lead = _lead(caption, variant)
+    if variant == 0:
+        story = (
+            f"{lead} "
+            f"{action} "
+            f"They spent a gentle day {where}. "
+            f"Friends stayed close, took turns, and used kind small words. "
+            f"They liked {ground} and smiled at {air}. "
+            f"Nobody was in a hurry. Everyone felt safe and glad. "
+            f"When the day grew quiet, they waved goodbye. "
+            f"It was a sweet adventure they would always remember."
+        )
+    elif variant == 1:
+        story = (
+            f"{lead} "
+            f"{action} "
+            f"They played slowly {where} and shared the fun. "
+            f"The little ones looked around with wide, curious eyes. "
+            f"{ground.capitalize()} felt nice, and {air} made them laugh softly. "
+            f"They helped each other and said please and thank you. "
+            f"At the end, every heart felt warm and proud. "
+            f"It was a kind day they would remember."
+        )
+    else:
+        story = (
+            f"{lead} "
+            f"{action} "
+            f"{prep.capitalize()} {place}, everyone moved gently and stayed together. "
+            f"They counted to three, then took a happy turn. "
+            f"They noticed {ground} and enjoyed {air}. "
+            f"Soft giggles filled the moment, and nobody felt left out. "
+            f"When rest time came, they held a long friendly wave. "
+            f"It was a calm, happy story to keep."
+        )
+    return _fit_word_count(story)
+
+
+def _split_sentences(text):
+    text = " ".join((text or "").split()).strip()
+    if not text:
+        return []
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    sentences = []
+    for part in parts:
+        part = part.strip(" ,;:-")
+        if not part:
+            continue
+        if not re.search(r"[.!?]$", part):
+            part += "."
+        sentences.append(part)
+    return sentences
+
+
+def _bridge_first(sentence):
+    """Attach the seed's unfinished clause so the first line stays grammatical."""
+    sentence = sentence.strip()
+    if sentence.lower().startswith("the children smiled and "):
+        return sentence
+    if sentence[:1].isalpha() and sentence[0].isupper():
+        sentence = sentence[0].lower() + sentence[1:]
+    return f"The children smiled and {sentence}"
 
 
 def _polish_hf_draft(raw, seed, caption):
-    """Rebuild a complete opening; drop mid-seed fragments."""
+    """Keep a few clean continuation sentences; drop the rest of the draft."""
     text = " ".join((raw or "").split())
     text = text.replace("\u2019", "'").replace("\u2018", "'")
     text = re.sub(r"\?s\b", "'s", text)
@@ -146,20 +368,51 @@ def _polish_hf_draft(raw, seed, caption):
     if text.lower().startswith(seed_clean.lower()):
         cont = text[len(seed_clean):].strip()
     else:
-        m = re.search(r"(?:Then |then )(.+)$", text)
-        cont = m.group(1).strip() if m else ""
+        match = re.search(r"(?:smiled and |Then |then )(.+)$", text)
+        cont = match.group(1).strip() if match else ""
     cont = cont.strip(" ,;:-")
-    if len(cont.split()) < 8:
+    cont = re.sub(r"^(?:and|then)\s+", "", cont, flags=re.I)
+    if len(cont.split()) < 4:
+        return ""
+    parts = _split_sentences(cont)
+    if not parts:
+        return ""
+    parts[0] = _bridge_first(parts[0])
+    kept = []
+    for sentence in parts:
+        if not _sentence_ok(sentence, caption):
+            break
+        kept.append(sentence)
+        if len(kept) == 2:
+            break
+    if not kept:
         return ""
     story = (
         f"Once upon a time, there was a happy day for children. "
-        f"They saw {caption}. Then {cont}"
+        f"They saw {caption}. "
+        + " ".join(kept)
     )
-    story = " ".join(story.split())
-    if not story.endswith((".", "!", "?")):
-        story += "."
-    return story
+    return " ".join(story.split())
 
+
+def _sample_continuation(storyteller, seed):
+    pad_token_id = getattr(storyteller.tokenizer, "eos_token_id", None)
+    try:
+        outputs = storyteller(
+            seed,
+            max_new_tokens=55,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.85,
+            repetition_penalty=1.5,
+            no_repeat_ngram_size=3,
+            truncation=True,
+            pad_token_id=pad_token_id,
+        )
+        return outputs[0]["generated_text"]
+    except Exception:
+        logging.getLogger("storytime").exception("distilgpt2 sample failed")
+        return ""
 
 
 def caption_image(image):
@@ -176,51 +429,44 @@ def caption_image(image):
     return _clean_caption(caption.strip())
 
 
+def _usable_draft(draft, caption):
+    if not draft or _looks_like_bad_story(draft, caption):
+        return ""
+    ok, _ = is_kid_safe_text(draft)
+    if not ok:
+        return ""
+    fitted = _fit_word_count(draft)
+    if not fitted or _looks_like_bad_story(fitted, caption):
+        return ""
+    ok, _ = is_kid_safe_text(fitted)
+    if not ok:
+        return ""
+    return fitted
+
+
 def generate_story(caption):
-    """HF draft first (Model Usage), then coherence gate → caption template."""
+    """One distilgpt2 sample, then a caption-true story if that sample is unusable.
+
+    distilgpt2 is a tiny base model, so most free-run text fails the safety
+    gate. We keep at most two clean sentences from its continuation. If none
+    survive, the fallback names the same place and character as the caption
+    instead of pasting one park paragraph onto every photo.
+    """
     _, _, storyteller = load_pipelines()
     caption = _clean_caption(caption)
     seed = (
         f"Once upon a time, there was a happy day for children. "
-        f"They saw {caption}. Then "
+        f"They saw {caption}. The children smiled and "
     )
-    min_words, max_words = 50, 100
-    pad_token_id = getattr(storyteller.tokenizer, "eos_token_id", None)
-    raw = ""
-    try:
-        outputs = storyteller(
-            seed, max_new_tokens=55, do_sample=True, temperature=0.7,
-            top_p=0.85, repetition_penalty=1.5, no_repeat_ngram_size=3,
-            truncation=True, pad_token_id=pad_token_id,
-        )
-        raw = outputs[0]["generated_text"]
-    except Exception:
-        raw = ""
+    draft = _polish_hf_draft(_sample_continuation(storyteller, seed), seed, caption)
+    story = _usable_draft(draft, caption)
+    if story:
+        return story
 
-    draft = _polish_hf_draft(raw, seed, caption)
-    use_template = (
-        not draft
-        or len(draft.split()) < min_words
-        or _looks_like_bad_story(draft, caption)
-    )
-    story = _template_story(caption) if use_template else draft
-
-    if _looks_like_bad_story(story, caption):
-        story = _template_story(caption)
-
-    ok, _ = is_kid_safe_text(story)
-    if not ok:
-        story = _template_story(caption)
-
-    words = story.split()
-    if len(words) < min_words:
-        story = _template_story(caption)
-        words = story.split()
-    if len(words) > max_words:
-        story = " ".join(words[:max_words])
-        if not story.endswith((".", "!", "?")):
-            story += "."
-    return story
+    story = _template_story(caption)
+    if _looks_like_bad_story(story, caption) or not is_kid_safe_text(story)[0]:
+        story = _template_story("happy friends playing together outdoors")
+    return _fit_word_count(story)
 
 
 def text_to_speech(story):
@@ -230,7 +476,7 @@ def text_to_speech(story):
     return buffer.getvalue()
 
 
-def render_karaoke_story(story, audio_bytes):
+def render_karaoke_story(story, audio_bytes, caption=""):
     """Fixed-size story panel; auto-scroll words while audio plays."""
     words = story.split()
     spans = [
@@ -240,6 +486,10 @@ def render_karaoke_story(story, audio_bytes):
     story_html = " ".join(spans)
     b64 = base64.b64encode(audio_bytes).decode("ascii")
     n = len(words)
+    seen = ""
+    if caption:
+        safe_caption = html.escape(caption)
+        seen = f'<div class="seen">I see: {safe_caption}</div>'
     # FRAME_H must match .pic-frame / .story-empty (380px)
     frame_h = 380
     component = f"""
@@ -252,7 +502,14 @@ def render_karaoke_story(story, audio_bytes):
           box-sizing:border-box; height:{frame_h}px; width:100%;
           padding:12px 14px 10px 14px; box-shadow:0 10px 0 #ffc2d4;
           display:flex; flex-direction:column; }}
-        .label {{ font-weight:900; color:#ff4d6d; font-size:1.05rem; margin:0 0 6px 0; flex:0 0 auto; }}
+        .labelrow {{ display:flex; align-items:center; justify-content:space-between;
+          gap:8px; flex:0 0 auto; margin:0 0 2px 0; }}
+        .label {{ font-weight:900; color:#ff4d6d; font-size:1.05rem; margin:0; }}
+        .seen {{ font-weight:800; color:#7b2cbf; font-size:0.82rem; line-height:1.25;
+          margin:0 0 6px 0; overflow:hidden; display:-webkit-box;
+          -webkit-line-clamp:2; -webkit-box-orient:vertical; }}
+        .dl {{ flex:0 0 auto; font-size:0.78rem; font-weight:900; color:#fff;
+          background:#7b2cbf; border-radius:999px; padding:3px 10px; text-decoration:none; }}
         .story {{ flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
           font-size:1.3rem; line-height:1.7; font-weight:700; scroll-behavior:smooth; }}
         .w {{ padding:1px 3px; border-radius:8px; transition:background .12s,color .12s,transform .12s; }}
@@ -260,7 +517,11 @@ def render_karaoke_story(story, audio_bytes):
         audio {{ width:100%; height:32px; margin-top:8px; flex:0 0 auto; }}
       </style></head><body>
       <div class="panel">
-        <div class="label">Your story</div>
+        <div class="labelrow">
+          <div class="label">Your story</div>
+          <a class="dl" href="#" id="dl">Download</a>
+        </div>
+        {seen}
         <div class="story" id="story">{story_html}</div>
         <audio id="player" controls autoplay src="data:audio/mp3;base64,{b64}"></audio>
       </div>
@@ -286,6 +547,13 @@ def render_karaoke_story(story, audio_bytes):
           paint(Math.min(n-1, Math.floor((player.currentTime/player.duration)*n)));
         }});
         player.addEventListener('ended',()=>paint(-1));
+        document.getElementById('dl').addEventListener('click', (e) => {{
+          e.preventDefault();
+          const a = document.createElement('a');
+          a.href = player.src;
+          a.download = 'story.mp3';
+          a.click();
+        }});
       </script></body></html>
     """
     # iframe height = frame only (no extra gap under the story box)
@@ -510,9 +778,14 @@ def main():
                             st.session_state.story = story
                             st.session_state.audio_bytes = audio_bytes
                         except Exception as err:
-                            st.error(
-                                f"Something went wrong. Details: {type(err).__name__}: {err}"
+                            logging.getLogger("storytime").exception(
+                                "story generation failed"
                             )
+                            st.error(
+                                "The story magic hiccuped. Please try Generate Story again."
+                            )
+                            with st.expander("Details"):
+                                st.code(f"{type(err).__name__}: {err}")
 
     with right:
         caption = st.session_state.get("caption")
@@ -520,7 +793,7 @@ def main():
         audio_bytes = st.session_state.get("audio_bytes")
 
         if story and audio_bytes:
-            render_karaoke_story(story, audio_bytes)
+            render_karaoke_story(story, audio_bytes, caption or "")
         else:
             st.markdown(
                 '<div class="story-empty">'
